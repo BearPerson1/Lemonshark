@@ -66,6 +66,8 @@ pub struct Core {
     network: ReliableSender,
     /// Keeps the cancel handlers of the messages we sent.
     cancel_handlers: HashMap<Round, Vec<CancelHandler>>,
+    /// ID of this primary
+    primary_id : String,
 }
 
 impl Core {
@@ -84,6 +86,7 @@ impl Core {
         rx_proposer: Receiver<Header>,
         tx_consensus: Sender<Certificate>,
         tx_proposer: Sender<(Vec<Digest>, Round)>,
+        primary_id : String,
     ) {
         tokio::spawn(async move {
             Self {
@@ -108,6 +111,7 @@ impl Core {
                 certificates_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
                 network: ReliableSender::new(),
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
+                primary_id,
             }
             .run()
             .await;
@@ -140,7 +144,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_header(&mut self, header: &Header) -> DagResult<()> {
-        debug!("Processing {:?}", header);
+        debug!("Processing header {:?}", header);
         // Indicate that we are processing this header.
         self.processing
             .entry(header.round)
@@ -234,7 +238,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_vote(&mut self, vote: Vote) -> DagResult<()> {
-        debug!("Processing {:?}", vote);
+        debug!("Processing vote {:?}", vote);
 
         // Add it to the votes' aggregator and try to make a new certificate.
         if let Some(certificate) =
@@ -268,7 +272,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_certificate(&mut self, certificate: Certificate) -> DagResult<()> {
-        debug!("Processing {:?}", certificate);
+        debug!("Processing cert {:?}", certificate);
         // Process the header embedded in the certificate if we haven't already voted for it (if we already
         // voted, it means we already processed it). Since this header got certified, we are sure that all
         // the data it refers to (ie. its payload and its parents) are available. We can thus continue the

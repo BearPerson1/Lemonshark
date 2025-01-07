@@ -66,6 +66,7 @@ impl Primary {
         tx_output: Sender<Certificate>,
         rx_commit: Receiver<Certificate>,
         rx_metadata: Receiver<Metadata>,
+        primary_id : String,
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);
@@ -84,6 +85,7 @@ impl Primary {
         // Parse the public and secret key of this authority.
         let name = keypair.name;
         let secret = keypair.secret;
+
 
         // Atomic variable use to synchronizer all tasks with the latest consensus round. This is only
         // used for cleanup. The only tasks that write into this variable is `GarbageCollector`.
@@ -154,6 +156,7 @@ impl Primary {
             /* rx_proposer */ rx_headers,
             /* rx_consensus */ tx_output,
             /* tx_proposer */ tx_parents,
+            primary_id,
         );
 
         // Keeps track of the latest consensus round and allows other tasks to clean up their their internal state

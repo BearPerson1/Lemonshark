@@ -35,7 +35,11 @@ async fn main() -> Result<()> {
                 .args_from_usage("--committee=<FILE> 'The file containing committee information'")
                 .args_from_usage("--parameters=[FILE] 'The file containing the node parameters'")
                 .args_from_usage("--store=<PATH> 'The path where to create the data store'")
-                .subcommand(SubCommand::with_name("primary").about("Run a single primary"))
+                .subcommand(
+                    SubCommand::with_name("primary")
+                        .about("Run a single primary")
+                        .args_from_usage("--id=<INT> 'The primary id'"),
+                )
                 .subcommand(
                     SubCommand::with_name("worker")
                         .about("Run a single worker")
@@ -97,10 +101,19 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
         // Spawn the primary and consensus core.
-        ("primary", _) => {
+        ("primary", Some(sub_matches)) => {
+            let id = sub_matches
+                .value_of("id")
+                .unwrap()
+                .parse::<WorkerId>()
+                .context("The primary id must be a positive integer")?;
+
             let (tx_new_certificates, rx_new_certificates) = channel(CHANNEL_CAPACITY);
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
+
+            
+
             #[cfg(not(feature = "dolphin"))]
             {
                 Tusk::spawn(
@@ -113,6 +126,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 let _not_used = tx_metadata;
             }
             #[cfg(feature = "dolphin")]
+
             Dolphin::spawn(
                 committee.clone(),
                 parameters.timeout,
@@ -121,6 +135,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_commit,
                 tx_metadata,
                 tx_output,
+                id.to_string(),
             );
 
             Primary::spawn(
@@ -131,6 +146,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 /* tx_output */ tx_new_certificates,
                 rx_commit,
                 rx_metadata,
+                id.to_string(),
             );
         }
 

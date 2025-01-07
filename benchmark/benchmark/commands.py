@@ -27,14 +27,15 @@ class CommandMaker:
         return f'./node generate_keys --filename {filename}'
 
     @staticmethod
-    def run_primary(keys, committee, store, parameters, debug=False):
+    ## added id num to account for sharding
+    def run_primary(keys, committee, store, parameters, id, debug=False):
         assert isinstance(keys, str)
         assert isinstance(committee, str)
         assert isinstance(parameters, str)
         assert isinstance(debug, bool)
         v = '-vvv' if debug else '-vv'
         return (f'./node {v} run --keys {keys} --committee {committee} '
-                f'--store {store} --parameters {parameters} primary')
+                f'--store {store} --parameters {parameters} primary --id {id}')
 
     @staticmethod
     def run_worker(keys, committee, store, parameters, id, debug=False):

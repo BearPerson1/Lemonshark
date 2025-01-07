@@ -34,6 +34,10 @@ pub struct Dolphin {
     virtual_round: Round,
     /// Implements the commit logic and returns an ordered list of certificates.
     committer: Committer,
+
+    /// ID for sharding
+    primary_id : String
+
 }
 
 impl Dolphin {
@@ -46,6 +50,7 @@ impl Dolphin {
         tx_commit: Sender<Certificate>,
         tx_parents: Sender<Metadata>,
         tx_output: Sender<Certificate>,
+        primary_id : String
     ) {
         tokio::spawn(async move {
             Self {
@@ -59,6 +64,7 @@ impl Dolphin {
                 genesis: Certificate::genesis(&committee),
                 virtual_round: 0,
                 committer: Committer::new(committee, gc_depth),
+                primary_id,
             }
             .run()
             .await;
@@ -73,7 +79,7 @@ impl Dolphin {
         // The timer keeping track of the leader timeout.
         let timer = sleep(Duration::from_millis(self.timeout));
         tokio::pin!(timer);
-
+        info!("SELF ID {}", self.primary_id);
         let mut quorum = Some(self.genesis.iter().map(|x| (x.digest(), 0)).collect());
         let mut advance_early = true;
         loop {
@@ -105,7 +111,7 @@ impl Dolphin {
 
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
-                    debug!("Processing {:?}", certificate);
+                    debug!("Processing cert {:?}", certificate);
                     let virtual_round = certificate.virtual_round();
 
                     // Add the new certificate to the local storage.
