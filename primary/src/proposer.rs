@@ -98,7 +98,7 @@ impl Proposer {
             &mut self.signature_service,
         )
         .await;
-        debug!("Created {:?}", header);
+        debug!("Created header {:?}", header);
         if log_enabled!(log::Level::Debug) {
             if let Some(metadata) = header.metadata.as_ref() {
                 debug!(
