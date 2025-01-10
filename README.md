@@ -16,12 +16,8 @@ This software is licensed as [Apache 2.0](LICENSE).
 
 ## Dones
 1. Each primary is now allocated an ID and is aware of this. 
+2. headers now include shard information; this info also rotates per round in a determinsitic manner. 
 
 
 ## Todo's (Tentative and subject to progress)
-1. Modify the header sending information to include a shard number that is contingent on:
-```
-primary_id
-
-(virtual) dag
-```
+1. modify consensus/src/dolphin to have early commit logic. 
