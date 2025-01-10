@@ -66,7 +66,7 @@ impl Primary {
         tx_output: Sender<Certificate>,
         rx_commit: Receiver<Certificate>,
         rx_metadata: Receiver<Metadata>,
-        primary_id : u32,
+        primary_id : u64,
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);

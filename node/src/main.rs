@@ -105,7 +105,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let id = sub_matches
                 .value_of("id")
                 .unwrap()
-                .parse::<WorkerId>()
+                .parse::<u64>()
                 .context("The primary id must be a positive integer")?;
 
             let (tx_new_certificates, rx_new_certificates) = channel(CHANNEL_CAPACITY);

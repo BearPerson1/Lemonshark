@@ -46,7 +46,8 @@ pub struct Proposer {
     payload_size: usize,
     /// The metadata to include in the next header.
     metadata: VecDeque<Metadata>,
-    primary_id: u32,
+    primary_id: u64,
+    committee: Committee,
 }
 
 impl Proposer {
@@ -61,13 +62,14 @@ impl Proposer {
         rx_workers: Receiver<(Digest, WorkerId)>,
         tx_core: Sender<Header>,
         rx_consensus: Receiver<Metadata>,
-        primary_id: u32,
+        primary_id: u64,
     ) {
         let genesis = Certificate::genesis(committee)
             .iter()
             .map(|x| x.digest())
             .collect();
 
+        let committee_clone = committee.clone(); // Clone the committee
         tokio::spawn(async move {
             Self {
                 name,
@@ -84,16 +86,33 @@ impl Proposer {
                 payload_size: 0,
                 metadata: VecDeque::new(),
                 primary_id,
+                committee:committee_clone,
             }
             .run()
             .await;
         });
     }
 
+    // Function to determine which shard this current header should work on
+    // By default its done in a round robin manner dependant on the primary_id value. 
+    fn determine_shard_num(&self, primary_id:u64, round_num: u64, committee_size:u64)->u64{
+        let temp = (primary_id + round_num - 1) % committee_size;
+        if temp == 0 
+        { 
+            committee_size
+        }
+        else 
+        {
+            temp
+        }
+    }
+    
     async fn make_header(&mut self) {
         // Make a new header.
-        debug!("Creating new header");
-        let shard_num = 1;
+        
+        
+        let shard_num = self.determine_shard_num(self.primary_id, self.round, self.committee.size() as u64);
+        debug!("Creating new header for primary: {}, round: {}, shard num: {}",self.primary_id,self.round,shard_num);
 
         let header = Header::new(
             self.name,

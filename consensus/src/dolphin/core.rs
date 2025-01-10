@@ -36,7 +36,7 @@ pub struct Dolphin {
     committer: Committer,
 
     /// ID for sharding
-    primary_id : u32
+    primary_id : u64
 
 }
 
@@ -50,7 +50,7 @@ impl Dolphin {
         tx_commit: Sender<Certificate>,
         tx_parents: Sender<Metadata>,
         tx_output: Sender<Certificate>,
-        primary_id : u32
+        primary_id : u64
     ) {
         tokio::spawn(async move {
             Self {

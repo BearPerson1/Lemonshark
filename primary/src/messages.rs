@@ -51,7 +51,7 @@ pub struct Header {
     pub metadata: Option<Metadata>,
     pub id: Digest,
     pub signature: Signature,
-    pub shard_num: i32,
+    pub shard_num: u64,
 }
 
 impl Header {
@@ -62,7 +62,7 @@ impl Header {
         parents: BTreeSet<Digest>,
         metadata: Option<Metadata>,
         signature_service: &mut SignatureService,
-        shard_num: i32,
+        shard_num: u64,
     ) -> Self {
         let header = Self {
             author,
