@@ -122,6 +122,7 @@ impl Proposer {
             self.metadata.pop_back(),
             &mut self.signature_service,
             shard_num,
+            self.primary_id,
         )
         .await;
         debug!("Created header {:?}", header);

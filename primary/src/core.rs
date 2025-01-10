@@ -146,6 +146,9 @@ impl Core {
     #[async_recursion]
     async fn process_header(&mut self, header: &Header) -> DagResult<()> {
         debug!("Processing header {:?}", header);
+        debug!("[Verbose processing Header]: {}",header.lemon_debug());
+        //debug!("[Verbose] Processing header [id: {}, round: {}, shard num: {}]",header.author,header.round,header.shard_num);
+        
         // Indicate that we are processing this header.
         self.processing
             .entry(header.round)

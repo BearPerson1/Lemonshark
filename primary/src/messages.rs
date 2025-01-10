@@ -52,6 +52,7 @@ pub struct Header {
     pub id: Digest,
     pub signature: Signature,
     pub shard_num: u64,
+    pub primary_id: u64,
 }
 
 impl Header {
@@ -63,6 +64,7 @@ impl Header {
         metadata: Option<Metadata>,
         signature_service: &mut SignatureService,
         shard_num: u64,
+        primary_id: u64,
     ) -> Self {
         let header = Self {
             author,
@@ -73,6 +75,7 @@ impl Header {
             id: Digest::default(),
             signature: Signature::default(),
             shard_num,
+            primary_id,
         };
         let id = header.digest();
         let signature = signature_service.request_signature(id.clone()).await;
@@ -81,6 +84,15 @@ impl Header {
             signature,
             ..header
         }
+    }
+
+    pub fn lemon_debug(&self) -> String{
+        format!(
+            "[Primary_id: {}, Round: {}, Shard_num: {}]",
+            self.primary_id,
+            self.round,
+            self.shard_num,
+        )
     }
 
     pub fn verify(&self, committee: &Committee) -> DagResult<()> {
@@ -129,7 +141,7 @@ impl fmt::Debug for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(
             f,
-            "{}: B{}({}, {})",
+            "{}: B{}({}, {},)",
             self.id,
             self.round,
             self.author,
