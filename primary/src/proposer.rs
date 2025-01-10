@@ -46,6 +46,7 @@ pub struct Proposer {
     payload_size: usize,
     /// The metadata to include in the next header.
     metadata: VecDeque<Metadata>,
+    primary_id: u32,
 }
 
 impl Proposer {
@@ -60,6 +61,7 @@ impl Proposer {
         rx_workers: Receiver<(Digest, WorkerId)>,
         tx_core: Sender<Header>,
         rx_consensus: Receiver<Metadata>,
+        primary_id: u32,
     ) {
         let genesis = Certificate::genesis(committee)
             .iter()
@@ -81,6 +83,7 @@ impl Proposer {
                 digests: Vec::with_capacity(2 * header_size),
                 payload_size: 0,
                 metadata: VecDeque::new(),
+                primary_id,
             }
             .run()
             .await;

@@ -67,7 +67,7 @@ pub struct Core {
     /// Keeps the cancel handlers of the messages we sent.
     cancel_handlers: HashMap<Round, Vec<CancelHandler>>,
     /// ID of this primary
-    primary_id : String,
+    primary_id : u32,
 }
 
 impl Core {
@@ -86,7 +86,7 @@ impl Core {
         rx_proposer: Receiver<Header>,
         tx_consensus: Sender<Certificate>,
         tx_proposer: Sender<(Vec<Digest>, Round)>,
-        primary_id : String,
+        primary_id : u32,
     ) {
         tokio::spawn(async move {
             Self {
@@ -119,6 +119,8 @@ impl Core {
     }
 
     async fn process_own_header(&mut self, header: Header) -> DagResult<()> {
+        debug!("own header 1");
+
         // Reset the votes aggregator.
         self.current_header = header.clone();
         self.votes_aggregator = VotesAggregator::new();

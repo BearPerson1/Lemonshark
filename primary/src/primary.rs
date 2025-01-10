@@ -66,7 +66,7 @@ impl Primary {
         tx_output: Sender<Certificate>,
         rx_commit: Receiver<Certificate>,
         rx_metadata: Receiver<Metadata>,
-        primary_id : String,
+        primary_id : u32,
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);
@@ -202,6 +202,7 @@ impl Primary {
             /* rx_workers */ rx_our_digests,
             /* tx_core */ tx_headers,
             /* rx_consensus */ rx_metadata,
+            primary_id,
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.

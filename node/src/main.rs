@@ -135,7 +135,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_commit,
                 tx_metadata,
                 tx_output,
-                id.to_string(),
+                id,
             );
 
             Primary::spawn(
@@ -146,7 +146,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 /* tx_output */ tx_new_certificates,
                 rx_commit,
                 rx_metadata,
-                id.to_string(),
+                id,
             );
         }
 
