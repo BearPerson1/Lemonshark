@@ -73,7 +73,7 @@ impl Dolphin {
 
     async fn run(&mut self) {
         // The consensus state (everything else is immutable).
-        let mut state = State::new(self.gc_depth, self.genesis.clone());
+        let mut state = State::new(self.gc_depth, self.genesis.clone(),committee.size());
         let mut virtual_state = VirtualState::new(self.committee.clone(), self.genesis.clone());
 
         // The timer keeping track of the leader timeout.

@@ -112,7 +112,8 @@ impl Proposer {
         
         
         let shard_num = self.determine_shard_num(self.primary_id, self.round, self.committee.size() as u64);
-        debug!("Creating new header for primary: {}, round: {}, shard num: {}",self.primary_id,self.round,shard_num);
+        
+        debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.primary_id,self.round,shard_num);
 
         let header = Header::new(
             self.name,
