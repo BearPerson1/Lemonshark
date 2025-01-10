@@ -89,6 +89,9 @@ impl Proposer {
 
     async fn make_header(&mut self) {
         // Make a new header.
+        debug!("Creating new header");
+        let shard_num = 1;
+
         let header = Header::new(
             self.name,
             self.round,
@@ -96,6 +99,7 @@ impl Proposer {
             self.last_parents.drain(..).collect(),
             self.metadata.pop_back(),
             &mut self.signature_service,
+            shard_num,
         )
         .await;
         debug!("Created header {:?}", header);

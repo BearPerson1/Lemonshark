@@ -317,6 +317,7 @@ impl Core {
         }
 
         // Send it to the consensus layer.
+        // Note: This is where the consensus/src/... consensus primary is called. 
         let id = certificate.header.id.clone();
         if let Err(e) = self.tx_consensus.send(certificate).await {
             warn!(
@@ -373,6 +374,11 @@ impl Core {
 
     // Main loop listening to incoming messages.
     pub async fn run(&mut self) {
+
+        // Some debug statements:
+        debug!("primary [{}] is running with primary_id: {}", self.name,self.primary_id);
+
+
         loop {
             let result = tokio::select! {
                 // We receive here messages from other primaries.

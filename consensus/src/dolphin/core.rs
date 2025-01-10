@@ -79,7 +79,7 @@ impl Dolphin {
         // The timer keeping track of the leader timeout.
         let timer = sleep(Duration::from_millis(self.timeout));
         tokio::pin!(timer);
-        info!("SELF ID {}", self.primary_id);
+
         let mut quorum = Some(self.genesis.iter().map(|x| (x.digest(), 0)).collect());
         let mut advance_early = true;
         loop {

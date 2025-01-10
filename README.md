@@ -11,7 +11,8 @@ This repo provides an experimental implementation of the asynchronous fallback p
 ## License
 This software is licensed as [Apache 2.0](LICENSE).
 
-
+## Some notes:
+1. Main calculations of latencies are done via the committed and created messages in consensus/core and primary/proposer respectively.
 
 ## Dones
 1. Each primary is now allocated an ID and is aware of this. 

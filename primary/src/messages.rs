@@ -51,6 +51,7 @@ pub struct Header {
     pub metadata: Option<Metadata>,
     pub id: Digest,
     pub signature: Signature,
+    pub shard_num: i32,
 }
 
 impl Header {
@@ -61,6 +62,7 @@ impl Header {
         parents: BTreeSet<Digest>,
         metadata: Option<Metadata>,
         signature_service: &mut SignatureService,
+        shard_num: i32,
     ) -> Self {
         let header = Self {
             author,
@@ -70,6 +72,7 @@ impl Header {
             metadata,
             id: Digest::default(),
             signature: Signature::default(),
+            shard_num,
         };
         let id = header.digest();
         let signature = signature_service.request_signature(id.clone()).await;
@@ -117,6 +120,7 @@ impl Hash for Header {
         if let Some(metadata) = &self.metadata {
             hasher.update(metadata);
         }
+        hasher.update(self.shard_num.to_le_bytes()); // include the shard_num
         Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
     }
 }
@@ -130,13 +134,14 @@ impl fmt::Debug for Header {
             self.round,
             self.author,
             self.payload.keys().map(|x| x.size()).sum::<usize>(),
+   
         )
     }
 }
 
 impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "B{}({})", self.round, self.author)
+        write!(f, "B{}({})", self.round, self.author,)
     }
 }
 
