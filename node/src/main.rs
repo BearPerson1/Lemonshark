@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 // Copyright(C) Facebook, Inc. and its affiliates.
 use anyhow::{Context, Result};
 use clap::{crate_name, crate_version, App, AppSettings, ArgMatches, SubCommand};
@@ -10,7 +8,6 @@ use config::{Committee, KeyPair, Parameters, WorkerId};
 use consensus::Dolphin;
 #[cfg(not(feature = "dolphin"))]
 use consensus::Tusk;
-use crypto::PublicKey;
 use env_logger::Env;
 use primary::{Certificate, Primary};
 use store::Store;
@@ -38,11 +35,7 @@ async fn main() -> Result<()> {
                 .args_from_usage("--committee=<FILE> 'The file containing committee information'")
                 .args_from_usage("--parameters=[FILE] 'The file containing the node parameters'")
                 .args_from_usage("--store=<PATH> 'The path where to create the data store'")
-                .subcommand(
-                    SubCommand::with_name("primary")
-                        .about("Run a single primary")
-                        .args_from_usage("--id=<INT> 'The primary id'"),
-                )
+                .subcommand(SubCommand::with_name("primary").about("Run a single primary"))
                 .subcommand(
                     SubCommand::with_name("worker")
                         .about("Run a single worker")
@@ -104,17 +97,10 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
         // Spawn the primary and consensus core.
-        ("primary", Some(sub_matches)) => {
-            let id = sub_matches
-                .value_of("id")
-                .unwrap()
-                .parse::<u64>()
-                .context("The primary id must be a positive integer")?;
-
+        ("primary", _) => {
             let (tx_new_certificates, rx_new_certificates) = channel(CHANNEL_CAPACITY);
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
-
             #[cfg(not(feature = "dolphin"))]
             {
                 Tusk::spawn(
@@ -127,7 +113,6 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 let _not_used = tx_metadata;
             }
             #[cfg(feature = "dolphin")]
-
             Dolphin::spawn(
                 committee.clone(),
                 parameters.timeout,

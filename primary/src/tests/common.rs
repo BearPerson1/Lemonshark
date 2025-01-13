@@ -59,6 +59,7 @@ pub fn committee() -> Committee {
                         stake: 1,
                         primary,
                         workers,
+                        primary_id: (i + 1) as u64,
                     },
                 )
             })

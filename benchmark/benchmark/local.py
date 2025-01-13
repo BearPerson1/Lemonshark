@@ -90,18 +90,14 @@ class LocalBench:
                     self._background_run(cmd, log_file)
 
             # Run the primaries (except the faulty ones).
-            counter = 1
             for i, address in enumerate(committee.primary_addresses(self.faults)):
                 cmd = CommandMaker.run_primary(
                     PathMaker.key_file(i),
                     PathMaker.committee_file(),
                     PathMaker.db_path(i),
                     PathMaker.parameters_file(),
-                    str(counter),
                     debug=debug
                 )
-                counter += 1
-                # added a counter to account for shard allocation
                 log_file = PathMaker.primary_log_file(i)
                 self._background_run(cmd, log_file)
 
