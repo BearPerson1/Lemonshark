@@ -115,8 +115,6 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
 
-            let mut name_to_id:HashMap<PublicKey,u64> = HashMap::new();
-
             #[cfg(not(feature = "dolphin"))]
             {
                 Tusk::spawn(
@@ -138,8 +136,6 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_commit,
                 tx_metadata,
                 tx_output,
-                id,
-                name_to_id,
             );
 
             Primary::spawn(
@@ -150,7 +146,6 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 /* tx_output */ tx_new_certificates,
                 rx_commit,
                 rx_metadata,
-                id,
             );
         }
 

@@ -70,8 +70,6 @@ pub struct Core {
     
     // Stuff for lemonshark: 
 
-    /// ID of this primary
-    primary_id : u64,
 
 }
 
@@ -91,7 +89,6 @@ impl Core {
         rx_proposer: Receiver<Header>,
         tx_consensus: Sender<Certificate>,
         tx_proposer: Sender<(Vec<Digest>, Round)>,
-        primary_id : u64,
         
     ) {
         tokio::spawn(async move {
@@ -117,7 +114,6 @@ impl Core {
                 certificates_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
                 network: ReliableSender::new(),
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
-                primary_id,
                 
             }
             .run()
@@ -153,8 +149,12 @@ impl Core {
     #[async_recursion]
     async fn process_header(&mut self, header: &Header) -> DagResult<()> {
         debug!("Processing header {:?}", header);
-        debug!("[Verbose processing Header]: {}",header.lemon_debug());
-        //debug!("[Verbose] Processing header [id: {}, round: {}, shard num: {}]",header.author,header.round,header.shard_num);
+
+        debug!("Verbose processing header]: id: {}, round: {}, shard num: {}",
+            self.committee.get_primary_id(&header.author),
+            header.round,
+            header.shard_num
+        );
 
        
         // Indicate that we are processing this header.
@@ -386,10 +386,6 @@ impl Core {
 
     // Main loop listening to incoming messages.
     pub async fn run(&mut self) {
-
-        // Some debug statements:
-        debug!("primary [{}] is running with primary_id: {}", self.name,self.primary_id);
-
 
         loop {
             let result = tokio::select! {

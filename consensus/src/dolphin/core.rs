@@ -9,8 +9,8 @@ use primary::{Certificate, Metadata, Round};
 use std::collections::BTreeSet;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
-use crypto::{PublicKey};
-use std::collections::{HashMap};
+use crypto::PublicKey;
+use std::collections::HashMap;
 
 pub struct Dolphin {
     /// The committee information.
@@ -38,12 +38,6 @@ pub struct Dolphin {
     committer: Committer,
 
 
-    // Stuff for lemonshark: 
-    /// ID for sharding
-    primary_id : u64,
-
-    pub name_to_id: HashMap<PublicKey,u64>,
-
 }
 
 impl Dolphin {
@@ -56,8 +50,6 @@ impl Dolphin {
         tx_commit: Sender<Certificate>,
         tx_parents: Sender<Metadata>,
         tx_output: Sender<Certificate>,
-        primary_id : u64,
-        name_to_id: HashMap<PublicKey,u64>,
     ) {
         tokio::spawn(async move {
             Self {
@@ -71,8 +63,6 @@ impl Dolphin {
                 genesis: Certificate::genesis(&committee),
                 virtual_round: 0,
                 committer: Committer::new(committee, gc_depth),
-                primary_id,
-                name_to_id,
             }
             .run()
             .await;
@@ -122,17 +112,6 @@ impl Dolphin {
                     debug!("Processing cert {:?}", certificate);
                     let virtual_round = certificate.virtual_round();
 
-                     // Add name_to_id mapping. 
-                    if self.name_to_id.len() < self.committee.size()
-                    {
-                        if !self.name_to_id.contains_key(&certificate.header.author)
-                        {
-                            debug!("[name_to_id]: added {} -> {}",certificate.header.author,certificate.header.primary_id);
-                            self.name_to_id.insert(certificate.header.author,certificate.header.primary_id);
-                        }
-                    }
-
-
                     // Add the new certificate to the local storage.
                     state.add(certificate.clone());
 
@@ -148,7 +127,11 @@ impl Dolphin {
                     // Log the latest committed round of every authority (for debug).
                     if log_enabled!(log::Level::Debug) {
                         for (name, round) in &state.last_committed {
-                            debug!("Latest commit of {}| id:{:?} : Round {}", name,  self.name_to_id.get(name),round);
+                            debug!("Latest commit of {}| id:{} : Round {}", 
+                                name, 
+                                self.committee.get_primary_id(name),
+                                round
+                                );
                         }
                     }
 
@@ -157,7 +140,10 @@ impl Dolphin {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
-                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,certificate.header.primary_id, certificate.header.round, certificate.header.shard_num);
+                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
+                        self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
+                        certificate.header.shard_num
+                        );
 
 
                         #[cfg(feature = "benchmark")]

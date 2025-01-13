@@ -62,7 +62,7 @@ class Committee:
 
         port = base_port
         self.json = {'authorities': OrderedDict()}
-        for name, hosts in addresses.items():
+        for i, (name, hosts) in enumerate(addresses.items()): 
             host = hosts.pop(0)
             primary_addr = {
                 'primary_to_primary': f'{host}:{port}',
@@ -82,7 +82,8 @@ class Committee:
             self.json['authorities'][name] = {
                 'stake': 1,
                 'primary': primary_addr,
-                'workers': workers_addr
+                'workers': workers_addr,
+                'primary_id': i + 1
             }
 
     def primary_addresses(self, faults=0):

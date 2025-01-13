@@ -142,6 +142,10 @@ pub struct Authority {
     pub primary: PrimaryAddresses,
     /// Map of workers' id and their network addresses.
     pub workers: HashMap<WorkerId, WorkerAddresses>,
+    
+
+    // added for lemonshark
+    pub primary_id: u64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -194,7 +198,13 @@ impl Committee {
             .map(|x| x.primary.clone())
             .ok_or_else(|| ConfigError::NotInCommittee(*to))
     }
-
+    
+    pub fn get_primary_id(&self, name: &PublicKey) -> u64 {
+        self.authorities
+            .get(name)
+            .map_or_else(|| 0, |x| x.primary_id)
+    }
+    
     /// Returns the addresses of all primaries except `myself`.
     pub fn others_primaries(&self, myself: &PublicKey) -> Vec<(PublicKey, PrimaryAddresses)> {
         self.authorities

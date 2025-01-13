@@ -46,7 +46,7 @@ pub struct Proposer {
     payload_size: usize,
     /// The metadata to include in the next header.
     metadata: VecDeque<Metadata>,
-    primary_id: u64,
+
     committee: Committee,
 }
 
@@ -62,7 +62,6 @@ impl Proposer {
         rx_workers: Receiver<(Digest, WorkerId)>,
         tx_core: Sender<Header>,
         rx_consensus: Receiver<Metadata>,
-        primary_id: u64,
     ) {
         let genesis = Certificate::genesis(committee)
             .iter()
@@ -85,7 +84,6 @@ impl Proposer {
                 digests: Vec::with_capacity(2 * header_size),
                 payload_size: 0,
                 metadata: VecDeque::new(),
-                primary_id,
                 committee:committee_clone,
             }
             .run()
@@ -111,9 +109,9 @@ impl Proposer {
         // Make a new header.
         
         
-        let shard_num = self.determine_shard_num(self.primary_id, self.round, self.committee.size() as u64);
+        let shard_num = self.determine_shard_num(self.committee.get_primary_id(&self.name), self.round, self.committee.size() as u64);
         
-        debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.primary_id,self.round,shard_num);
+        debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
 
         let header = Header::new(
             self.name,
@@ -123,7 +121,6 @@ impl Proposer {
             self.metadata.pop_back(),
             &mut self.signature_service,
             shard_num,
-            self.primary_id,
         )
         .await;
         debug!("Created header {:?}", header);
