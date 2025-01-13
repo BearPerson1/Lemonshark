@@ -50,13 +50,44 @@ impl State {
         }
         
         debug!("DAG Structure:");
-        for (round, authorities) in &self.dag {
-            debug!("Round {}:", round);
-            for (auth_key, (digest, cert)) in authorities {
-                let name = mapping.get(auth_key);
-                debug!("├─ Primary: {}", name.unwrap());
-                debug!("│  ├─ Digest: {:?}", digest);
-                debug!("│  └─ Certificate Round: {}", cert.round());
+        // Create a sorted vector of rounds
+        let mut rounds: Vec<_> = self.dag.keys().collect();
+        rounds.sort(); // Sort rounds in ascending order
+
+        // Iterate over sorted rounds
+        for round in rounds {
+            if let Some(authorities) = self.dag.get(round) {
+                debug!("Round {}:", round);
+                for (auth_key, (digest, cert)) in authorities {
+                    let name = mapping.get(auth_key);
+                    debug!("├─ Primary: {}", name.unwrap());
+                    debug!("│  ├─ Digest: {:?}", digest);
+                    debug!("│  ├─ Certificate Round: {}", cert.round());
+                    debug!("│  ├─ Shard: {}", cert.header.shard_num);
+                    debug!("│  └─ Parents:");
+                    for parent in &cert.header.parents 
+                    {
+                        if let Some(prev_round) = self.dag.get(&(cert.round() - 1)) {
+                            let parent_info = prev_round.iter()
+                                .find(|(_, (digest, _))| digest == parent);
+                            
+                            match parent_info {
+                                Some((auth, (_, parent_cert))) => {
+                                    let auth_id = mapping.get(auth).copied().unwrap_or(0);
+                                    debug!("│     └─ {:?} (from Primary {}, Shard {})", 
+                                        parent, 
+                                        auth_id,
+                                        parent_cert.header.shard_num
+                                    );
+                                },
+                                // NOTE: usually the below happens when the info has been GC-ed
+                                None => debug!("│     └─ {:?} (authority unknown)", parent),
+                            }
+                        } else {
+                            debug!("│     └─ {:?} (round not available)", parent);
+                        }
+                    }
+                }
             }
         }
         
