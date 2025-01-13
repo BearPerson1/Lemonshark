@@ -128,6 +128,14 @@ impl Proposer {
             parents_id_shard.insert((primary_id, parent_shard));
         }
 
+        debug!(
+            "[Primary: {}] Creating header with parents_id_shard: {:?} for round {} shard {}", 
+            self.committee.get_primary_id(&self.name),
+            parents_id_shard,
+            self.round,
+            shard_num
+        );
+
 
         let header = Header::new(
             self.name,

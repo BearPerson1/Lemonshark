@@ -41,7 +41,7 @@ impl State {
 
     // For debugging
     // Note: Its quite verbose
-    pub fn print_state(&self,mapping:HashMap<PublicKey,u64>) {
+    pub fn print_state(&self, mapping: HashMap<PublicKey, u64>) {
         debug!("Last Committed Round: {}", self.last_committed_round);
         
         debug!("Last Committed by Authority:");
@@ -54,7 +54,7 @@ impl State {
         // Create a sorted vector of rounds
         let mut rounds: Vec<_> = self.dag.keys().collect();
         rounds.sort(); // Sort rounds in ascending order
-
+    
         // Iterate over sorted rounds
         for round in rounds {
             if let Some(authorities) = self.dag.get(round) {
@@ -66,27 +66,9 @@ impl State {
                     debug!("│  ├─ Certificate Round: {}", cert.round());
                     debug!("│  ├─ Shard: {}", cert.header.shard_num);
                     debug!("│  └─ Parents:");
-                    for parent in &cert.header.parents 
-                    {
-                        if let Some(prev_round) = self.dag.get(&(cert.round() - 1)) {
-                            let parent_info = prev_round.iter()
-                                .find(|(_, (digest, _))| digest == parent);
-                            
-                            match parent_info {
-                                Some((auth, (_, parent_cert))) => {
-                                    let auth_id = mapping.get(auth).copied().unwrap_or(0);
-                                    debug!("│     └─ {:?} (from Primary {}, Shard {})", 
-                                        parent, 
-                                        auth_id,
-                                        parent_cert.header.shard_num
-                                    );
-                                },
-                                // NOTE: usually the below happens when the info has been GC-ed
-                                None => debug!("│     └─ {:?} (authority unknown)", parent),
-                            }
-                        } else {
-                            debug!("│     └─ {:?} (round not available)", parent);
-                        }
+                    // For each parent, print its information
+                    for (primary_id, parent_shard) in &cert.header.parents_id_shard {
+                        debug!("│     └─ Primary: {}, Shard: {}", primary_id, parent_shard);
                     }
                 }
             }
