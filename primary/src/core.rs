@@ -48,7 +48,7 @@ pub struct Core {
     /// Output all certificates to the consensus layer.
     tx_consensus: Sender<Certificate>,
     /// Send valid a quorum of certificates' ids to the `Proposer` (along with their round).
-    tx_proposer: Sender<(Vec<Digest>, Round)>,
+    tx_proposer: Sender<(Vec<Certificate>, Round)>,
 
     /// The last garbage collected round.
     gc_round: Round,
@@ -88,7 +88,7 @@ impl Core {
         rx_certificate_waiter: Receiver<Certificate>,
         rx_proposer: Receiver<Header>,
         tx_consensus: Sender<Certificate>,
-        tx_proposer: Sender<(Vec<Digest>, Round)>,
+        tx_proposer: Sender<(Vec<Certificate>, Round)>,
         
     ) {
         tokio::spawn(async move {
@@ -321,11 +321,25 @@ impl Core {
             .or_insert_with(|| Box::new(CertificatesAggregator::new()))
             .append(certificate.clone(), &self.committee)
         {
+
+
+            // Lemonshark: Send full certs
+
+            let mut parent_certs = Vec::new();
+
+
+            for digest in &parents {
+                if let Ok(Some(bytes)) = self.store.read(digest.to_vec()).await {
+                    if let Ok(cert) = bincode::deserialize(&bytes) {
+                        parent_certs.push(cert);
+                    }
+                }
+            }
             // Send it to the `Proposer`.
             self.tx_proposer
-                .send((parents, certificate.round()))
+                .send((parent_certs, certificate.round()))
                 .await
-                .expect("Failed to send certificate");
+                .expect("Failed to send certificates");
         }
 
         // Send it to the consensus layer.

@@ -84,6 +84,23 @@ impl Dolphin {
         }
     }
 
+    fn print_shard_last_committed_round(&mut self)
+    {
+        debug!("Shard Last Committed Rounds:");
+    
+    // Create a vector of keys and sort them
+    let mut shard_nums: Vec<_> = self.shard_last_committed_round.keys().collect();
+    shard_nums.sort();
+    
+    // Print each shard's information in sorted order
+    for shard_num in shard_nums {
+        if let Some(round) = self.shard_last_committed_round.get(shard_num) {
+            debug!("├─ Shard {}: Round {}", shard_num, round);
+        }
+    }
+    debug!("=======================================");
+    }
+
     async fn run(&mut self) {
         // The consensus state (everything else is immutable).
         let mut state = State::new(self.gc_depth, self.genesis.clone());
@@ -192,10 +209,10 @@ impl Dolphin {
                     }
 
                     // TODO: remove
-                    debug!("shard_last_committed_round: {:?}", self.shard_last_committed_round);
+                    
 
                     state.print_state(self.committee.get_all_primary_ids());
-
+                    self.print_shard_last_committed_round();
                     // Lemonshark: Try and eary commit
                     
                     

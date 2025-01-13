@@ -11,6 +11,7 @@ use log::{debug, log_enabled};
 use std::collections::VecDeque;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
+use std::collections::BTreeSet;
 
 #[cfg(test)]
 #[path = "tests/proposer_tests.rs"]
@@ -28,7 +29,7 @@ pub struct Proposer {
     max_header_delay: u64,
 
     /// Receives the parents to include in the next header (along with their round number).
-    rx_core: Receiver<(Vec<Digest>, Round)>,
+    rx_core: Receiver<(Vec<Certificate>, Round)>,
     /// Receives the batches' digests from our workers.
     rx_workers: Receiver<(Digest, WorkerId)>,
     /// Sends newly created headers to the `Core`.
@@ -47,7 +48,9 @@ pub struct Proposer {
     /// The metadata to include in the next header.
     metadata: VecDeque<Metadata>,
 
+    // Lemonshark:
     committee: Committee,
+    last_parent_certificates: Vec<Certificate>,
 }
 
 impl Proposer {
@@ -58,10 +61,11 @@ impl Proposer {
         signature_service: SignatureService,
         header_size: usize,
         max_header_delay: u64,
-        rx_core: Receiver<(Vec<Digest>, Round)>,
+        rx_core: Receiver<(Vec<Certificate>, Round)>,
         rx_workers: Receiver<(Digest, WorkerId)>,
         tx_core: Sender<Header>,
         rx_consensus: Receiver<Metadata>,
+        
     ) {
         let genesis = Certificate::genesis(committee)
             .iter()
@@ -85,6 +89,7 @@ impl Proposer {
                 payload_size: 0,
                 metadata: VecDeque::new(),
                 committee:committee_clone,
+                last_parent_certificates: Vec::new(),
             }
             .run()
             .await;
@@ -112,6 +117,17 @@ impl Proposer {
         let shard_num = self.determine_shard_num(self.committee.get_primary_id(&self.name), self.round, self.committee.size() as u64);
         
         debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
+        let mut parents_id_shard = BTreeSet::new();
+
+
+
+        for parent_cert in &self.last_parent_certificates 
+        { 
+            let primary_id = self.committee.get_primary_id(&parent_cert.header.author);
+            let parent_shard = parent_cert.header.shard_num;
+            parents_id_shard.insert((primary_id, parent_shard));
+        }
+
 
         let header = Header::new(
             self.name,
@@ -121,6 +137,7 @@ impl Proposer {
             self.metadata.pop_back(),
             &mut self.signature_service,
             shard_num,
+            parents_id_shard, 
         )
         .await;
         debug!("Created header {:?}", header);
@@ -178,7 +195,7 @@ impl Proposer {
             }
 
             tokio::select! {
-                Some((parents, round)) = self.rx_core.recv() => {
+                Some((parent_certs, round)) = self.rx_core.recv() => {
                     if round < self.round {
                         continue;
                     }
@@ -188,7 +205,9 @@ impl Proposer {
                     debug!("Dag moved to round {}", self.round);
 
                     // Signal that we have enough parent certificates to propose a new header.
-                    self.last_parents = parents;
+                    self.last_parents = parent_certs.iter().map(|cert| cert.digest()).collect();
+                    self.last_parent_certificates = parent_certs;
+
                 }
                 Some((digest, worker_id)) = self.rx_workers.recv() => {
                     self.payload_size += digest.size();

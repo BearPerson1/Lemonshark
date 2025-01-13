@@ -52,6 +52,7 @@ pub struct Header {
     pub id: Digest,
     pub signature: Signature,
     pub shard_num: u64,
+    pub parents_id_shard: BTreeSet<(u64, u64)>,
 
 }
 
@@ -64,6 +65,7 @@ impl Header {
         metadata: Option<Metadata>,
         signature_service: &mut SignatureService,
         shard_num: u64,
+        parents_id_shard: BTreeSet<(u64, u64)>,
     ) -> Self {
         let header = Self {
             author,
@@ -74,6 +76,7 @@ impl Header {
             id: Digest::default(),
             signature: Signature::default(),
             shard_num,
+            parents_id_shard, 
         };
         let id = header.digest();
         let signature = signature_service.request_signature(id.clone()).await;
@@ -122,7 +125,7 @@ impl Hash for Header {
         if let Some(metadata) = &self.metadata {
             hasher.update(metadata);
         }
-        hasher.update(self.shard_num.to_le_bytes()); // include the shard_num
+        
         Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
     }
 }

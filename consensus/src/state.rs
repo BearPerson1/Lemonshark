@@ -39,7 +39,8 @@ impl State {
     }
 
 
-    // for debugging. 
+    // For debugging
+    // Note: Its quite verbose
     pub fn print_state(&self,mapping:HashMap<PublicKey,u64>) {
         debug!("Last Committed Round: {}", self.last_committed_round);
         
