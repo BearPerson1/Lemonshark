@@ -34,7 +34,7 @@ impl Committer {
     ) -> Vec<Certificate> 
     {
         let mut sequence = Vec::new();
-
+        
         
         sequence
     }   

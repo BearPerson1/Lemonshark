@@ -192,10 +192,14 @@ impl Dolphin {
                     }
 
                     // TODO: remove
-                    debug!("Initialized authority counts: {:?}", self.shard_last_committed_round);
+                    debug!("shard_last_committed_round: {:?}", self.shard_last_committed_round);
+
+                    state.print_state(self.committee.get_all_primary_ids());
 
                     // Lemonshark: Try and eary commit
                     
+                    
+
                     let early_commit_sequence = self.committer.try_early_commit(&certificate, &mut state, &mut virtual_state, &mut self.shard_last_committed_round);
 
 

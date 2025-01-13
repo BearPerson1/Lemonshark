@@ -198,13 +198,22 @@ impl Committee {
             .map(|x| x.primary.clone())
             .ok_or_else(|| ConfigError::NotInCommittee(*to))
     }
+
     
+    /// lemonshark: returns primary ID. 
     pub fn get_primary_id(&self, name: &PublicKey) -> u64 {
         self.authorities
             .get(name)
             .map_or_else(|| 0, |x| x.primary_id)
     }
-    
+    /// lemonshark: returns all pk to primary ID mapping. 
+    pub fn get_all_primary_ids(&self) -> HashMap<PublicKey, u64> {
+        self.authorities
+            .iter()
+            .map(|(key, authority)| (*key, authority.primary_id))
+            .collect()
+    }
+
     /// Returns the addresses of all primaries except `myself`.
     pub fn others_primaries(&self, myself: &PublicKey) -> Vec<(PublicKey, PrimaryAddresses)> {
         self.authorities

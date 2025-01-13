@@ -38,6 +38,33 @@ impl State {
         }
     }
 
+
+    // for debugging. 
+    pub fn print_state(&self,mapping:HashMap<PublicKey,u64>) {
+        debug!("Last Committed Round: {}", self.last_committed_round);
+        
+        debug!("Last Committed by Authority:");
+        for (authority, round) in &self.last_committed {
+            let name = mapping.get(authority);
+            debug!("└─ Primary: {} -> Round {}", name.unwrap(), round);
+        }
+        
+        debug!("DAG Structure:");
+        for (round, authorities) in &self.dag {
+            debug!("Round {}:", round);
+            for (auth_key, (digest, cert)) in authorities {
+                let name = mapping.get(auth_key);
+                debug!("├─ Primary: {}", name.unwrap());
+                debug!("│  ├─ Digest: {:?}", digest);
+                debug!("│  └─ Certificate Round: {}", cert.round());
+            }
+        }
+        
+        debug!("GC Depth: {}", self.gc_depth);
+        debug!("=======================================\n");
+    }
+
+
     /// Add a certificate to the dag.
     pub fn add(&mut self, certificate: Certificate) {
         self.dag
