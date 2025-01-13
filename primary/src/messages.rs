@@ -88,7 +88,8 @@ impl Header {
 
     pub fn lemon_debug(&self) -> String{
         format!(
-            "[Primary_id: {}, Round: {}, Shard_num: {}]",
+            "[name: {} | Primary_id: {}, Round: {}, Shard_num: {}]",
+            self.author,
             self.primary_id,
             self.round,
             self.shard_num,

@@ -26,8 +26,7 @@ pub struct State {
     // This map <shard num, depth> will record what is the latest committed depth. 
     pub finalized_shard_depths: HashMap<u64,u64>,
 
-    // This will check if the blocks created by the current primary has an existing chain for the respective shards. 
-    pub shard_chain_check: HashMap<u64,bool>,
+
 }
 
 impl State {
@@ -42,11 +41,7 @@ impl State {
         for key in 1..primary_num{
             finalized_shard_depths.insert(key,0);
         }
-
-        let mut shard_chain_check: HashMap<u64, bool> = HashMap::new();
-        for key in 1..primary_num{
-            shard_chain_check.insert(key,true);
-        }
+        
 
         Self {
             gc_depth,
@@ -54,7 +49,6 @@ impl State {
             last_committed: genesis.iter().map(|(x, (_, y))| (*x, y.round())).collect(),
             dag: [(0, genesis)].iter().cloned().collect(),
             finalized_shard_depths,
-            shard_chain_check,
         }
     }
 

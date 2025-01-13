@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 // Copyright(C) Facebook, Inc. and its affiliates.
 use anyhow::{Context, Result};
 use clap::{crate_name, crate_version, App, AppSettings, ArgMatches, SubCommand};
@@ -8,6 +10,7 @@ use config::{Committee, KeyPair, Parameters, WorkerId};
 use consensus::Dolphin;
 #[cfg(not(feature = "dolphin"))]
 use consensus::Tusk;
+use crypto::PublicKey;
 use env_logger::Env;
 use primary::{Certificate, Primary};
 use store::Store;
@@ -112,7 +115,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
 
-            
+            let mut name_to_id:HashMap<PublicKey,u64> = HashMap::new();
 
             #[cfg(not(feature = "dolphin"))]
             {
@@ -136,6 +139,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_metadata,
                 tx_output,
                 id,
+                name_to_id,
             );
 
             Primary::spawn(

@@ -66,8 +66,13 @@ pub struct Core {
     network: ReliableSender,
     /// Keeps the cancel handlers of the messages we sent.
     cancel_handlers: HashMap<Round, Vec<CancelHandler>>,
+
+    
+    // Stuff for lemonshark: 
+
     /// ID of this primary
     primary_id : u64,
+
 }
 
 impl Core {
@@ -87,6 +92,7 @@ impl Core {
         tx_consensus: Sender<Certificate>,
         tx_proposer: Sender<(Vec<Digest>, Round)>,
         primary_id : u64,
+        
     ) {
         tokio::spawn(async move {
             Self {
@@ -112,6 +118,7 @@ impl Core {
                 network: ReliableSender::new(),
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
                 primary_id,
+                
             }
             .run()
             .await;
@@ -148,7 +155,8 @@ impl Core {
         debug!("Processing header {:?}", header);
         debug!("[Verbose processing Header]: {}",header.lemon_debug());
         //debug!("[Verbose] Processing header [id: {}, round: {}, shard num: {}]",header.author,header.round,header.shard_num);
-        
+
+       
         // Indicate that we are processing this header.
         self.processing
             .entry(header.round)
