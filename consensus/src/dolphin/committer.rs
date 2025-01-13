@@ -4,7 +4,7 @@ use crate::state::{Dag, State};
 use config::{Committee, Stake};
 use log::{debug, log_enabled};
 use primary::{Certificate, Round};
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 
 pub struct Committer {
     /// The committee information.
@@ -23,6 +23,21 @@ impl Committer {
             last_committed: 0,
         }
     }
+
+    // Lemonshark: Try and commit earlier
+    pub fn try_early_commit(
+        &mut self,
+        certificate: &Certificate,
+        state: &mut State,
+        virtual_state: &mut VirtualState,
+        shard_last_committed_round: &mut HashMap<u64, u64>,
+    ) -> Vec<Certificate> 
+    {
+        let mut sequence = Vec::new();
+
+        
+        sequence
+    }   
 
     /// Try to commit. If we succeed, output am ordered sequence.
     pub fn try_commit(

@@ -12,6 +12,8 @@ use tokio::time::{sleep, Duration, Instant};
 use crypto::PublicKey;
 use std::collections::HashMap;
 
+
+
 pub struct Dolphin {
     /// The committee information.
     committee: Committee,
@@ -36,6 +38,11 @@ pub struct Dolphin {
     virtual_round: Round,
     /// Implements the commit logic and returns an ordered list of certificates.
     committer: Committer,
+
+    // lemonshark stuff:
+    // This delimits how far the chain has to check. 
+    // <shard, round num = u64>
+    shard_last_committed_round: HashMap <u64,u64>,
 
 }
 
@@ -62,16 +69,29 @@ impl Dolphin {
                 genesis: Certificate::genesis(&committee),
                 virtual_round: 0,
                 committer: Committer::new(committee, gc_depth),
+                shard_last_committed_round: HashMap::new(),
             }
             .run()
             .await;
         });
     }
 
+    fn init_shard_last_committed_round(&mut self)
+    {
+        for id in 1..=self.committee.size()
+        {
+            self.shard_last_committed_round.insert(id as u64 ,0);
+        }
+    }
+
     async fn run(&mut self) {
         // The consensus state (everything else is immutable).
-        let mut state = State::new(self.gc_depth, self.genesis.clone(),self.committee.size() as u64);
+        let mut state = State::new(self.gc_depth, self.genesis.clone());
         let mut virtual_state = VirtualState::new(self.committee.clone(), self.genesis.clone());
+
+        // Init the shard_last_committed_round()
+        self.init_shard_last_committed_round();
+
 
         // The timer keeping track of the leader timeout.
         let timer = sleep(Duration::from_millis(self.timeout));
@@ -79,6 +99,8 @@ impl Dolphin {
 
         let mut quorum = Some(self.genesis.iter().map(|x| (x.digest(), 0)).collect());
         let mut advance_early = true;
+
+
         loop {
             if (timer.is_elapsed() || advance_early) && quorum.is_some() {
                 if !advance_early {
@@ -139,6 +161,13 @@ impl Dolphin {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
+                        // Everytime a commit is performed, we will have to update shard_last_committed_round
+                        if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round
+                        {
+                            self.shard_last_committed_round.insert(certificate.header.shard_num,certificate.header.round);
+                        }
+
+
                         debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
                         self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
                         certificate.header.shard_num
@@ -161,6 +190,15 @@ impl Dolphin {
                             warn!("Failed to output certificate: {}", e);
                         }
                     }
+
+                    // TODO: remove
+                    debug!("Initialized authority counts: {:?}", self.shard_last_committed_round);
+
+                    // Lemonshark: Try and eary commit
+                    
+                    let early_commit_sequence = self.committer.try_early_commit(&certificate, &mut state, &mut virtual_state, &mut self.shard_last_committed_round);
+
+
 
                     // If the certificate is not from our virtual round, it cannot help us advance round.
                     if self.virtual_round != virtual_round {
@@ -194,6 +232,10 @@ impl Dolphin {
                     };
                     debug!("Can early advance for round {}: {}", self.virtual_round, advance_early);
                     //}
+
+
+
+
                 },
                 () = &mut timer => {
                     // Nothing to do.
