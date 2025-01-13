@@ -21,34 +21,20 @@ pub struct State {
     /// must be regularly cleaned up through the function `update`.
     pub dag: Dag,
 
-    // Additions for lemonshark:
-
-    // This map <shard num, depth> will record what is the latest committed depth. 
-    pub finalized_shard_depths: HashMap<u64,u64>,
-
 
 }
 
 impl State {
-    pub fn new(gc_depth: Round, genesis: Vec<Certificate>,primary_num:u64) -> Self {
+    pub fn new(gc_depth: Round, genesis: Vec<Certificate>) -> Self {
         let genesis = genesis
             .into_iter()
             .map(|x| (x.origin(), (x.digest(), x)))
             .collect::<HashMap<_, _>>();
-
-        
-        let mut finalized_shard_depths = HashMap::new();
-        for key in 1..primary_num{
-            finalized_shard_depths.insert(key,0);
-        }
-        
-
         Self {
             gc_depth,
             last_committed_round: 0,
             last_committed: genesis.iter().map(|(x, (_, y))| (*x, y.round())).collect(),
             dag: [(0, genesis)].iter().cloned().collect(),
-            finalized_shard_depths,
         }
     }
 

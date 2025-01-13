@@ -37,7 +37,6 @@ pub struct Dolphin {
     /// Implements the commit logic and returns an ordered list of certificates.
     committer: Committer,
 
-
 }
 
 impl Dolphin {
