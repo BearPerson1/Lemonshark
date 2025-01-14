@@ -5,6 +5,7 @@ use config::{Committee, Stake};
 use log::{debug, log_enabled};
 use primary::{Certificate, Round};
 use std::collections::{HashMap,HashSet};
+use crypto::PublicKey;
 
 pub struct Committer {
     /// The committee information.
@@ -26,6 +27,38 @@ impl Committer {
 
     // Lemonshark: Try and commit earlier
 
+
+    pub fn print_ancestors(
+        &self,
+        cert: &Certificate, 
+        target_shard: u64, 
+        current_round: Round, 
+        state: &State, 
+        indent: &str,
+        mapping: &HashMap<PublicKey, u64>
+    ) 
+    {
+        // Only consider parents with matching shard number
+        for (parent_id, parent_shard) in &cert.header.parents_id_shard {
+            if *parent_shard == target_shard {
+                debug!("{}├─ Parent (Round {}): Primary {}, Shard {}", 
+                      indent, current_round - 1, parent_id, parent_shard);
+                
+                // Try to find this parent in the previous round
+                if current_round > 0 {
+                    if let Some(prev_authorities) = state.dag.get(&(current_round - 1)) {
+                        for (_, (_, prev_cert)) in prev_authorities {
+                            if mapping.get(&prev_cert.header.author).map(|id| *id) == Some(*parent_id) {
+                                self.print_ancestors(prev_cert, target_shard, current_round - 1, state, &format!("{}│  ", indent), mapping);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // TODO: Optimize the code abit
     // currently it rechecks blocks that already fail the requirements needed for early finality within a finality. 
 
@@ -42,16 +75,39 @@ impl Committer {
 
         // f+1 threshold
         let test = self.committee.validity_threshold();
-        
+
         // Create a sorted vector of rounds
         let mut rounds: Vec<_> = state.dag.keys().collect();
         rounds.sort(); // Sort rounds in ascending order
 
+        for &round in &rounds {
+            if let Some(authorities) = state.dag.get(&round) {
+                for (auth_key, (digest, cert)) in authorities {
+                    // Skip if already committed
+                    if !state.last_committed.get(auth_key).map_or(true, |last_round| round > last_round) {
+                        continue;
+                    }
+    
+                    let target_shard = cert.header.shard_num;
+                    debug!("\nStarting ancestry trace for certificate:");
+                    debug!("Round {}", round);
+                    debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
+                    debug!("├─ Shard: {}", target_shard);
+                    debug!("└─ Ancestry chain (following shard {}):", target_shard);
 
+                    // Recursive function to print all ancestors of the same shard
+                    // Start the ancestry trace
+                    self.print_ancestors(cert, target_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
+                    debug!("===============================");
+                }
+            }
+        }
 
         
         sequence
-    }   
+    }  
+
+
 
     /// Try to commit. If we succeed, output am ordered sequence.
     pub fn try_commit(
