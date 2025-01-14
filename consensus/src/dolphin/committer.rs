@@ -28,7 +28,7 @@ impl Committer {
     // Lemonshark: Try and commit earlier
 
 
-    pub fn print_ancestors(
+    pub fn get_oldest_chain_ancestor(
         &self,
         cert: &Certificate, 
         target_shard: u64, 
@@ -36,8 +36,10 @@ impl Committer {
         state: &State, 
         indent: &str,
         mapping: &HashMap<PublicKey, u64>
-    ) 
+    ) -> Round 
     {
+        let mut earliest_round = current_round;
+    
         // Only consider parents with matching shard number
         for (parent_id, parent_shard) in &cert.header.parents_id_shard {
             if *parent_shard == target_shard {
@@ -49,7 +51,17 @@ impl Committer {
                     if let Some(prev_authorities) = state.dag.get(&(current_round - 1)) {
                         for (_, (_, prev_cert)) in prev_authorities {
                             if mapping.get(&prev_cert.header.author).map(|id| *id) == Some(*parent_id) {
-                                self.print_ancestors(prev_cert, target_shard, current_round - 1, state, &format!("{}│  ", indent), mapping);
+                                // Get the earliest round from recursive call
+                                let ancestor_earliest = self.get_oldest_chain_ancestor(
+                                    prev_cert, 
+                                    target_shard, 
+                                    current_round - 1, 
+                                    state, 
+                                    &format!("{}│  ", indent), 
+                                    mapping
+                                );
+                                // Update earliest_round if we found an earlier one
+                                earliest_round = earliest_round.min(ancestor_earliest);
                                 break;
                             }
                         }
@@ -57,14 +69,13 @@ impl Committer {
                 }
             }
         }
+    
+        earliest_round
     }
 
     // TODO: Optimize the code abit
     // currently it rechecks blocks that already fail the requirements needed for early finality within a finality. 
 
-    /// What it does is quite simple. 
-    /// 
-    /// for each block after state.last.committed we check if theres a path of shards and it has sufficient votes. 
     pub fn try_early_commit(
         &mut self,
         state: &mut State,
@@ -87,7 +98,7 @@ impl Committer {
                     if !state.last_committed.get(auth_key).map_or(true, |last_round| round > last_round) {
                         continue;
                     }
-    
+                    
                     let target_shard = cert.header.shard_num;
                     debug!("\nStarting ancestry trace for certificate:");
                     debug!("Round {}", round);
@@ -97,8 +108,22 @@ impl Committer {
 
                     // Recursive function to print all ancestors of the same shard
                     // Start the ancestry trace
-                    self.print_ancestors(cert, target_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
+                    let mut oldest_chain_ancestor_round = self.get_oldest_chain_ancestor(cert, target_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
+                
+                    debug!("The oldest being: {}", oldest_chain_ancestor_round);
+                    debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
+
+                    // This is where we do our first check:
+                    // If it has the chain. 
+                    if oldest_chain_ancestor_round - shard_last_committed_round.get(&target_shard).copied().unwrap_or(0) <= 1
+                    {
+                        debug!("success");
+                    }
+
                     debug!("===============================");
+
+
+
                 }
             }
         }
