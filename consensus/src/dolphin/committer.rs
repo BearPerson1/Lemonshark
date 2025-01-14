@@ -25,16 +25,30 @@ impl Committer {
     }
 
     // Lemonshark: Try and commit earlier
+
+    // TODO: Optimize the code abit
+    // currently it rechecks blocks that already fail the requirements needed for early finality within a finality. 
+
+    /// What it does is quite simple. 
+    /// 
+    /// for each block after state.last.committed we check if theres a path of shards and it has sufficient votes. 
     pub fn try_early_commit(
         &mut self,
-        certificate: &Certificate,
         state: &mut State,
-        virtual_state: &mut VirtualState,
         shard_last_committed_round: &mut HashMap<u64, u64>,
     ) -> Vec<Certificate> 
     {
         let mut sequence = Vec::new();
+
+        // f+1 threshold
+        let test = self.committee.validity_threshold();
         
+        // Create a sorted vector of rounds
+        let mut rounds: Vec<_> = state.dag.keys().collect();
+        rounds.sort(); // Sort rounds in ascending order
+
+
+
         
         sequence
     }   

@@ -87,18 +87,19 @@ impl Dolphin {
     fn print_shard_last_committed_round(&mut self)
     {
         debug!("Shard Last Committed Rounds:");
-    
-    // Create a vector of keys and sort them
-    let mut shard_nums: Vec<_> = self.shard_last_committed_round.keys().collect();
-    shard_nums.sort();
-    
-    // Print each shard's information in sorted order
-    for shard_num in shard_nums {
-        if let Some(round) = self.shard_last_committed_round.get(shard_num) {
-            debug!("├─ Shard {}: Round {}", shard_num, round);
+        // Create a vector of keys and sort them
+        let mut shard_nums: Vec<_> = self.shard_last_committed_round.keys().collect();
+        shard_nums.sort();
+        
+        // Print each shard's information in sorted order
+        for shard_num in shard_nums 
+        {
+            if let Some(round) = self.shard_last_committed_round.get(shard_num) 
+            {
+                debug!("├─ Shard {}: Round {}", shard_num, round);
+            }
         }
-    }
-    debug!("=======================================");
+        debug!("=======================================");
     }
 
     async fn run(&mut self) {
@@ -126,16 +127,15 @@ impl Dolphin {
                         self.virtual_round
                     );
                 }
-
                 // Advance to the next round.
                 self.virtual_round += 1;
                 debug!("Virtual dag moved to round {}", self.virtual_round);
-
                 // Send the virtual parents to the primary's proposer.
                 self.tx_parents
                     .send(Metadata::new(self.virtual_round, quorum.unwrap()))
                     .await
                     .expect("Failed to send virtual parents to primary");
+
 
                 // Reschedule the timer.
                 let deadline = Instant::now() + Duration::from_millis(self.timeout);
@@ -148,6 +148,10 @@ impl Dolphin {
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
                     debug!("Processing cert {:?}", certificate);
+                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
+                        self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
+                        certificate.header.shard_num
+                        );
                     let virtual_round = certificate.virtual_round();
 
                     // Add the new certificate to the local storage.
@@ -172,7 +176,6 @@ impl Dolphin {
                                 );
                         }
                     }
-
                     // Output the sequence in the right order.
                     for certificate in sequence {
                         #[cfg(not(feature = "benchmark"))]
@@ -209,15 +212,12 @@ impl Dolphin {
                     }
 
                     // TODO: remove
-                    
-
                     state.print_state(self.committee.get_all_primary_ids());
                     self.print_shard_last_committed_round();
-                    // Lemonshark: Try and eary commit
-                    
-                    
 
-                    let early_commit_sequence = self.committer.try_early_commit(&certificate, &mut state, &mut virtual_state, &mut self.shard_last_committed_round);
+                    // Lemonshark: Try and eary commit
+                    // NOTE: This runs every time a certificate is added, but must happen after a potential commit. 
+                    let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round);
 
 
 

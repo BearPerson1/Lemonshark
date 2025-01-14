@@ -45,7 +45,9 @@ impl State {
         debug!("Last Committed Round: {}", self.last_committed_round);
         
         debug!("Last Committed by Authority:");
-        for (authority, round) in &self.last_committed {
+        let mut sorted_authorities: Vec<_> = self.last_committed.iter().collect();
+        sorted_authorities.sort_by_key(|(auth, _)| mapping.get(auth).unwrap_or(&u64::MAX));
+        for (authority, round) in sorted_authorities {
             let name = mapping.get(authority);
             debug!("└─ Primary: {} -> Round {}", name.unwrap(), round);
         }
@@ -56,19 +58,39 @@ impl State {
         rounds.sort(); // Sort rounds in ascending order
     
         // Iterate over sorted rounds
+        // skip the genesis blocks
         for round in rounds {
+            if *round == 0 {
+                continue;
+            }
             if let Some(authorities) = self.dag.get(round) {
                 debug!("Round {}:", round);
-                for (auth_key, (digest, cert)) in authorities {
+                let mut sorted_auth: Vec<_> = authorities.iter().collect();
+                sorted_auth.sort_by_key(|(auth_key, _)| mapping.get(auth_key).unwrap_or(&u64::MAX));
+
+                 for (auth_key, (digest, cert)) in sorted_auth {
                     let name = mapping.get(auth_key);
                     debug!("├─ Primary: {}", name.unwrap());
-                    debug!("│  ├─ Digest: {:?}", digest);
+                    //ebug!("│  ├─ Digest: {:?}", digest);
                     debug!("│  ├─ Certificate Round: {}", cert.round());
                     debug!("│  ├─ Shard: {}", cert.header.shard_num);
                     debug!("│  └─ Parents:");
                     // For each parent, print its information
-                    for (primary_id, parent_shard) in &cert.header.parents_id_shard {
-                        debug!("│     └─ Primary: {}, Shard: {}", primary_id, parent_shard);
+                    if cert.header.parents_id_shard.is_empty() {
+                        if cert.round() <= 1 {
+                            debug!("│     └─ GENESIS");
+                        }else {
+                            // this might be thrown for round 1. This is expected as "genesis" does not seem to appear as a certicate. 
+                            debug!("│     └─ WARNING: No parents exist for this certificate!");
+                            debug!("│        └─ Certificate Round: {}, Origin: {}", cert.round(), cert.origin());
+                        }
+                    } else {
+                        let mut sorted_parents: Vec<_> = cert.header.parents_id_shard.iter().collect();
+                        sorted_parents.sort_by_key(|(primary_id, _)| *primary_id);
+                        // For each parent, print its information
+                        for (primary_id, parent_shard) in sorted_parents {
+                            debug!("│     └─ Primary: {}, Shard: {}", primary_id, parent_shard);
+                        }
                     }
                 }
             }
@@ -88,11 +110,25 @@ impl State {
     }
 
     /// Update and clean up internal state base on committed certificates.
+    /// For each authority:
+    // It goes through each round in the DAG
+    // Removes any certificates from that authority that are from rounds before its last committed round
+    // Removes entire rounds if:
+    //     They become empty after removing certificates, OR
+    //     They are older than last_committed_round - gc_dept
+    /// 
+    /// 
     pub fn update(&mut self, certificate: &Certificate) {
         self.last_committed
             .entry(certificate.origin())
             .and_modify(|r| *r = max(*r, certificate.round()))
             .or_insert_with(|| certificate.round());
+
+        // TODO remove. 
+        // debug!("[UPDATE STATE]: Round: {}, Shard: {}",
+        //     certificate.header.round,
+        //     certificate.header.shard_num
+        // );
 
         let last_committed_round = *self.last_committed.values().max().unwrap();
         self.last_committed_round = last_committed_round;
