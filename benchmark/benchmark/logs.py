@@ -44,10 +44,10 @@ class LogParser:
                 results = p.map(self._parse_primaries, primaries)
         except (ValueError, IndexError, AttributeError) as e:
             raise ParseError(f'Failed to parse nodes\' logs: {e}')
-        proposals, commits, self.configs, primary_ips = zip(*results)
+        proposals, commits, early_commits, self.configs, primary_ips = zip(*results)
         self.proposals = self._merge_results([x.items() for x in proposals])
         self.commits = self._merge_results([x.items() for x in commits])
-
+        self.early_commits = self._merge_results([x.items() for x in early_commits]) 
         # Parse the workers logs.
         try:
             with Pool() as p:
@@ -106,6 +106,12 @@ class LogParser:
         tmp = [(d, self._to_posix(t)) for t, d in tmp]
         commits = self._merge_results([tmp])
 
+
+        ## Lemonshark
+        tmp = findall(r'\[(.*Z) .* Early-Committed B\d+\([^ ]+\) -> ([^ ]+=)', log)
+        tmp = [(d, self._to_posix(t)) for t, d in tmp]
+        early_commits = self._merge_results([tmp])
+
         configs = {
             'header_size': int(
                 search(r'Header size .* (\d+)', log).group(1)
@@ -132,7 +138,7 @@ class LogParser:
 
         ip = search(r'booted on (\d+.\d+.\d+.\d+)', log).group(1)
         
-        return proposals, commits, configs, ip
+        return proposals, commits, early_commits, configs, ip
 
     def _parse_workers(self, log):
         if search(r'(?:panic|Error)', log) is not None:
@@ -186,6 +192,48 @@ class LogParser:
                     end = self.commits[batch_id]
                     latency += [end-start]
         return mean(latency) if latency else 0
+    ## lemonshark
+    
+    def _early_consensus_latency(self):
+        latency = []
+        for digest in set(self.commits.keys()) | set(self.early_commits.keys()):
+            if digest in self.proposals:
+                proposal_time = self.proposals[digest]
+                
+                # Initialize with regular commit time if it exists
+                commit_time = self.commits.get(digest, float('inf'))
+                
+                # Compare with early commit time if it exists
+                if digest in self.early_commits:
+                    commit_time = min(commit_time, self.early_commits[digest])
+                
+                # Only add if we found a valid commit (regular or early)
+                if commit_time != float('inf'):
+                    latency.append(commit_time - proposal_time)
+        
+        return mean(latency) if latency else 0
+
+    def _early_end_to_end_latency(self):
+        latency = []
+        for sent, received in zip(self.sent_samples, self.received_samples):
+            for tx_id, batch_id in received.items():
+                # Check if transaction exists in either commit type
+                commit_time = float('inf')
+                
+                if batch_id in self.commits:
+                    commit_time = self.commits[batch_id]
+                
+                if batch_id in self.early_commits:
+                    commit_time = min(commit_time, self.early_commits[batch_id])
+                
+                if commit_time != float('inf'):
+                    assert tx_id in sent  # We receive txs that we sent.
+                    start = sent[tx_id]
+                    latency.append(commit_time - start)
+        
+        return mean(latency) if latency else 0
+
+
 
     def result(self):
         header_size = self.configs[0]['header_size']
@@ -200,6 +248,9 @@ class LogParser:
         consensus_tps, consensus_bps, _ = self._consensus_throughput()
         end_to_end_tps, end_to_end_bps, duration = self._end_to_end_throughput()
         end_to_end_latency = self._end_to_end_latency() * 1_000
+
+        early_consensus_latency = self._early_consensus_latency() * 1_000
+        early_end_to_end_latency = self._early_end_to_end_latency() * 1_000
 
         return (
             '\n'
@@ -231,6 +282,9 @@ class LogParser:
             f' End-to-end TPS: {round(end_to_end_tps):,} tx/s\n'
             f' End-to-end BPS: {round(end_to_end_bps):,} B/s\n'
             f' End-to-end latency: {round(end_to_end_latency):,} ms\n'
+            '\n'
+            f' EARLY Consensus latency: {round(early_consensus_latency):,} ms\n'
+            f' EARLY End-to-end latency: {round(early_end_to_end_latency):,} ms\n'
             '-----------------------------------------\n'
         )
 

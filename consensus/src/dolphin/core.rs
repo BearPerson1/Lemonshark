@@ -222,17 +222,38 @@ impl Dolphin {
 
                     // Lemonshark: Try and eary commit
                     // NOTE: This runs every time a certificate is added, but must happen after a potential commit. 
-                    let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round);
 
-                    for certificate in early_commit_sequence {
-                        state.add_early_committed_certs(certificate.clone());
-                        #[cfg(feature = "benchmark")]
-                        for digest in certificate.header.payload.keys() {
-                            // NOTE: This log entry is used to compute performance.
-                            // TODO: change this so that benchmark can regex it in logs.py
-                            info!("Early Committed {} -> {:?}", certificate.header, digest); 
+
+                    // let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round);
+                    // for certificate in early_commit_sequence {
+                    //     state.add_early_committed_certs(certificate.clone());
+                    //     #[cfg(feature = "benchmark")]
+                    //     for digest in certificate.header.payload.keys() {
+                    //         // NOTE: This log entry is used to compute performance.
+                    //         // TODO: change this so that benchmark can regex it in logs.py
+                    //         info!("Early Committed {} -> {:?}", certificate.header, digest); 
+                    //     }
+                    // }
+
+                    // Parallelize it slightly
+                    tokio::select! {
+                        early_commit_result = async {
+                            self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round)
+                        } => {
+                            // Process the results
+                            for certificate in early_commit_result {
+                                state.add_early_committed_certs(certificate.clone());
+                                
+                                #[cfg(feature = "benchmark")]
+                                {
+                                    for digest in certificate.header.payload.keys() {
+                                        info!("Early-Committed {} -> {:?}", certificate.header, digest);
+                                    }
+                                }
+                            }
                         }
                     }
+
 //======================================================================
 
                     // If the certificate is not from our virtual round, it cannot help us advance round.
