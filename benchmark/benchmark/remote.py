@@ -195,6 +195,7 @@ class Bench:
                 (x, y) for x, y in zip(names, hosts)
             )
         committee = Committee(addresses, self.settings.base_port)
+        good_nodes = committee._get_good_nodes(bench_parameters.faults)  # ADD THIS LINE
         committee.print(PathMaker.committee_file())
 
         node_parameters.print(PathMaker.parameters_file())
@@ -203,12 +204,13 @@ class Bench:
         names = names[:len(names)-bench_parameters.faults]
         progress = progress_bar(names, prefix='Uploading config files:')
         for i, name in enumerate(progress):
-            for ip in committee.ips(name):
-                c = Connection(ip, user='ubuntu', connect_kwargs=self.connect)
-                c.run(f'{CommandMaker.cleanup()} || true', hide=True)
-                c.put(PathMaker.committee_file(), '.')
-                c.put(PathMaker.key_file(i), '.')
-                c.put(PathMaker.parameters_file(), '.')
+            if name in good_nodes:  # Only upload to non-faulty nodes
+                for ip in committee.ips(name):
+                    c = Connection(ip, user='ubuntu', connect_kwargs=self.connect)
+                    c.run(f'{CommandMaker.cleanup()} || true', hide=True)
+                    c.put(PathMaker.committee_file(), '.')
+                    c.put(PathMaker.key_file(i), '.')
+                    c.put(PathMaker.parameters_file(), '.')
 
         return committee
 

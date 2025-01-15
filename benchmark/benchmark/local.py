@@ -71,8 +71,11 @@ class LocalBench:
 
             names = [x.name for x in keys]
             committee = LocalCommittee(names, self.BASE_PORT, self.workers)
+            
+            # Get the list of good nodes (not faulty)
+            good_nodes = committee._get_good_nodes(self.faults)
+            
             committee.print(PathMaker.committee_file())
-
             self.node_parameters.print(PathMaker.parameters_file())
 
             # Run the clients (they will wait for the nodes to be ready).
@@ -89,31 +92,35 @@ class LocalBench:
                     log_file = PathMaker.client_log_file(i, id)
                     self._background_run(cmd, log_file)
 
-            # Run the primaries (except the faulty ones).
-            for i, address in enumerate(committee.primary_addresses(self.faults)):
-                cmd = CommandMaker.run_primary(
-                    PathMaker.key_file(i),
-                    PathMaker.committee_file(),
-                    PathMaker.db_path(i),
-                    PathMaker.parameters_file(),
-                    debug=debug
-                )
-                log_file = PathMaker.primary_log_file(i)
-                self._background_run(cmd, log_file)
-
-            # Run the workers (except the faulty ones).
-            for i, addresses in enumerate(workers_addresses):
-                for (id, address) in addresses:
-                    cmd = CommandMaker.run_worker(
+            # Run the primaries (only non-faulty ones)
+            for name, authority in committee.json['authorities'].items():
+                if name in good_nodes:  # Only run if node is not faulty
+                    i = authority['primary_id'] - 1  # Get correct index for key file
+                    cmd = CommandMaker.run_primary(
                         PathMaker.key_file(i),
                         PathMaker.committee_file(),
-                        PathMaker.db_path(i, id),
+                        PathMaker.db_path(i),
                         PathMaker.parameters_file(),
-                        id,  # The worker's id.
                         debug=debug
                     )
-                    log_file = PathMaker.worker_log_file(i, id)
+                    log_file = PathMaker.primary_log_file(i)
                     self._background_run(cmd, log_file)
+
+            # Run the workers (only non-faulty ones)
+            for name, authority in committee.json['authorities'].items():
+                if name in good_nodes:  # Only run if node is not faulty
+                    i = authority['primary_id'] - 1  # Get correct index for key file
+                    for id, worker in authority['workers'].items():
+                        cmd = CommandMaker.run_worker(
+                            PathMaker.key_file(i),
+                            PathMaker.committee_file(),
+                            PathMaker.db_path(i, id),
+                            PathMaker.parameters_file(),
+                            id,  # The worker's id.
+                            debug=debug
+                        )
+                        log_file = PathMaker.worker_log_file(i, id)
+                        self._background_run(cmd, log_file)
 
             # Wait for all transactions to be processed.
             Print.info(f'Running benchmark ({self.duration} sec)...')
