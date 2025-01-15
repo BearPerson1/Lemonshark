@@ -24,10 +24,11 @@ impl Committer {
             last_committed: 0,
         }
     }
-
+// ==================================================================================
     // Lemonshark: Try and commit earlier
+// ==================================================================================
 
-
+// Recursive function to get oldest ancestor 
     pub fn get_oldest_chain_ancestor(
         &self,
         cert: &Certificate, 
@@ -73,9 +74,73 @@ impl Committer {
         earliest_round
     }
 
+
+    pub fn count_certificate_children(
+        &self,
+        cert: &Certificate,
+        round: u64,
+        state: &State,
+    ) -> (usize, HashMap<u64, usize>) {
+        let mut total_children = 0;
+        let mut children_per_shard: HashMap<u64, usize> = HashMap::new();
+        
+        debug!("\n=== Starting Certificate Children Count ===");
+        debug!("Analyzing certificate from round {} by author {:?}", 
+               round, 
+               self.committee.get_all_primary_ids()[&cert.header.author]);
+        debug!("Certificate shard: {}", cert.header.shard_num);
+
+        // Look at the next round in the DAG
+        if let Some(next_round_certs) = state.dag.get(&(round + 1)) {
+            debug!("Found {} certificates in round {}", 
+                   next_round_certs.len(), 
+                   round + 1);
+
+            for (auth_key, (_, child_cert)) in next_round_certs {
+                // debug!("├─ Checking potential child certificate:");
+                // debug!("│  ├─ Author: {:?}", 
+                //        self.committee.get_all_primary_ids().get(auth_key));
+                // debug!("│  ├─ Shard: {}", child_cert.header.shard_num);
+                // debug!("│  └─ Parents count: {}", 
+                //        child_cert.header.parents_id_shard.len());
+
+                // Check if this certificate is a parent of the child
+                for (parent_id, parent_shard) in &child_cert.header.parents_id_shard {
+                    if *parent_id == self.committee.get_all_primary_ids()[&cert.header.author] {
+                        // Increment total children count
+                        total_children += 1;
+                        
+                        // Increment the count for this shard
+                        *children_per_shard
+                            .entry(child_cert.header.shard_num)
+                            .or_insert(0) += 1;
+
+                        debug!("│     ✓ Found child reference!");
+                        debug!("│     ├─ Parent ID: {}", parent_id);
+                        debug!("│     └─ Parent Shard: {}", parent_shard);
+                        
+                        // Break since we found this parent reference
+                        break;
+                    }
+                }
+            }
+        } else {
+            debug!("No certificates found in round {}", round + 1);
+        }
+
+        debug!("\n=== Certificate Children Count Summary ===");
+        debug!("Total children found: {}", total_children);
+        // debug!("Children distribution across shards:");
+        // for (shard, count) in &children_per_shard {
+        //     debug!("├─ Shard {}: {} children", shard, count);
+        // }
+        debug!("======================================\n");
+
+        (total_children, children_per_shard)
+    }
+
     // TODO: Optimize the code abit
     // currently it rechecks blocks that already fail the requirements needed for early finality within a finality. 
-
     pub fn try_early_commit(
         &mut self,
         state: &mut State,
@@ -85,7 +150,7 @@ impl Committer {
         let mut sequence = Vec::new();
 
         // f+1 threshold
-        let test = self.committee.validity_threshold();
+        let threshold = self.committee.validity_threshold();
 
         // Create a sorted vector of rounds
         let mut rounds: Vec<_> = state.dag.keys().collect();
@@ -99,31 +164,39 @@ impl Committer {
                         continue;
                     }
                     
+                    debug!("Checking certificate children for early commit consideration");
+                    let (child_count, shard_counts) = self.count_certificate_children(cert, *round, state);
+                    if child_count < threshold
+                    {
+                        continue;
+                    }
+                    debug!("sufficient votes");
+
+
                     let target_shard = cert.header.shard_num;
                     debug!("\nStarting ancestry trace for certificate:");
-                    debug!("Round {}", round);
-                    debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
-                    debug!("├─ Shard: {}", target_shard);
-                    debug!("└─ Ancestry chain (following shard {}):", target_shard);
+                    // debug!("Round {}", round);
+                    // debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
+                    // debug!("├─ Shard: {}", target_shard);
+                    // debug!("└─ Ancestry chain (following shard {}):", target_shard);
 
                     // Recursive function to print all ancestors of the same shard
                     // Start the ancestry trace
                     let mut oldest_chain_ancestor_round = self.get_oldest_chain_ancestor(cert, target_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
                 
-                    debug!("The oldest being: {}", oldest_chain_ancestor_round);
-                    debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
+                    // debug!("The oldest being: {}", oldest_chain_ancestor_round);
+                    // debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
 
                     // This is where we do our first check:
                     // If it has the chain. 
                     if oldest_chain_ancestor_round - shard_last_committed_round.get(&target_shard).copied().unwrap_or(0) <= 1
                     {
-                        debug!("success");
+                        debug!("Sufficient Chain");
+
+                        
                     }
 
-                    debug!("===============================");
-
-
-
+                    //debug!("===============================");
                 }
             }
         }
@@ -132,7 +205,7 @@ impl Committer {
         sequence
     }  
 
-
+// ==================================================================================
 
     /// Try to commit. If we succeed, output am ordered sequence.
     pub fn try_commit(
