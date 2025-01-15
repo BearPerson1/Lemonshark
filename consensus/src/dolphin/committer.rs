@@ -80,9 +80,9 @@ impl Committer {
         cert: &Certificate,
         round: u64,
         state: &State,
-    ) -> (usize, HashMap<u64, usize>) {
+    ) -> (u64, HashMap<u64, u64>) {
         let mut total_children = 0;
-        let mut children_per_shard: HashMap<u64, usize> = HashMap::new();
+        let mut children_per_shard: HashMap<u64, u64> = HashMap::new();
         
         debug!("\n=== Starting Certificate Children Count ===");
         debug!("Analyzing certificate from round {} by author {:?}", 
@@ -163,10 +163,16 @@ impl Committer {
                     if !state.last_committed.get(auth_key).map_or(true, |last_round| round > last_round) {
                         continue;
                     }
+                    // Skip if already early committed. 
+                    if state.early_committed_certs.iter().any(|skip_cert| skip_cert == cert) {
+                        debug!("Skipping certificate - found in state skip list");
+                        continue;
+                    }
                     
                     debug!("Checking certificate children for early commit consideration");
                     let (child_count, shard_counts) = self.count_certificate_children(cert, *round, state);
-                    if child_count < threshold
+
+                    if child_count < threshold.into()
                     {
                         continue;
                     }
@@ -192,16 +198,13 @@ impl Committer {
                     if oldest_chain_ancestor_round - shard_last_committed_round.get(&target_shard).copied().unwrap_or(0) <= 1
                     {
                         debug!("Sufficient Chain");
-
-                        
+                        // This cert will be early committed., 
+                        sequence.push(cert.clone()); 
                     }
-
                     //debug!("===============================");
                 }
             }
         }
-
-        
         sequence
     }  
 

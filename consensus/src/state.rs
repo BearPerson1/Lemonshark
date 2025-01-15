@@ -21,6 +21,7 @@ pub struct State {
     /// must be regularly cleaned up through the function `update`.
     pub dag: Dag,
 
+    pub early_committed_certs: Vec<Certificate>,
 
 }
 
@@ -35,7 +36,14 @@ impl State {
             last_committed_round: 0,
             last_committed: genesis.iter().map(|(x, (_, y))| (*x, y.round())).collect(),
             dag: [(0, genesis)].iter().cloned().collect(),
+            early_committed_certs: Vec::new(),
         }
+    }
+
+    /// Clear all certificates from the skip list
+    pub fn clear_early_committed_certs(&mut self) {
+        debug!("Clearing skip certificates list");
+        self.early_committed_certs.clear();
     }
 
 

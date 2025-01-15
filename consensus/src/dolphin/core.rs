@@ -219,6 +219,13 @@ impl Dolphin {
                     // NOTE: This runs every time a certificate is added, but must happen after a potential commit. 
                     let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round);
 
+                    for certificate in early_commit_sequence {
+                        #[cfg(feature = "benchmark")]
+                        for digest in certificate.header.payload.keys() {
+                            // NOTE: This log entry is used to compute performance.
+                            info!("Early Committed {} -> {:?}", certificate.header, digest); 
+                        }
+                    }
 
 
                     // If the certificate is not from our virtual round, it cannot help us advance round.
