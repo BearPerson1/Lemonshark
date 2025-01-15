@@ -145,6 +145,7 @@ impl Committer {
         &mut self,
         state: &mut State,
         shard_last_committed_round: &mut HashMap<u64, u64>,
+        virtual_round: u64,
     ) -> Vec<Certificate> 
     {
         let mut sequence = Vec::new();
@@ -166,6 +167,12 @@ impl Committer {
                     // Skip if already early committed. 
                     if state.early_committed_certs.iter().any(|skip_cert| skip_cert == cert) {
                         debug!("Skipping certificate - found in state skip list");
+                        continue;
+                    }
+                    // Skip if cert is in current round
+                    if cert.header.round == virtual_round
+                    {
+                        debug!("Skipping certificate - In same virtual round {} vs {}",cert.header.round,virtual_round);
                         continue;
                     }
                     

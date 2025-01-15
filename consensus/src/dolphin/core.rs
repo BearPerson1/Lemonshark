@@ -224,7 +224,7 @@ impl Dolphin {
                     // NOTE: This runs every time a certificate is added, but must happen after a potential commit. 
 
 
-                    // let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round);
+                    // let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round, virtual_round as u64);
                     // for certificate in early_commit_sequence {
                     //     state.add_early_committed_certs(certificate.clone());
                     //     #[cfg(feature = "benchmark")]
@@ -238,7 +238,10 @@ impl Dolphin {
                     // Parallelize it slightly
                     tokio::select! {
                         early_commit_result = async {
-                            self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round)
+                            self.committer.try_early_commit(
+                                &mut state, 
+                                &mut self.shard_last_committed_round, 
+                                virtual_round as u64)
                         } => {
                             // Process the results
                             for certificate in early_commit_result {
