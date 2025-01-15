@@ -324,3 +324,14 @@ impl PartialEq for Certificate {
         ret
     }
 }
+
+
+impl Eq for Certificate {} 
+
+impl std::hash::Hash for Certificate {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.header.id.hash(state);
+        self.round().hash(state);
+        self.origin().hash(state);
+    }
+}

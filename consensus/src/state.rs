@@ -21,7 +21,7 @@ pub struct State {
     /// must be regularly cleaned up through the function `update`.
     pub dag: Dag,
 
-    pub early_committed_certs: Vec<Certificate>,
+    pub early_committed_certs: HashSet<Certificate>,
 
 }
 
@@ -36,16 +36,30 @@ impl State {
             last_committed_round: 0,
             last_committed: genesis.iter().map(|(x, (_, y))| (*x, y.round())).collect(),
             dag: [(0, genesis)].iter().cloned().collect(),
-            early_committed_certs: Vec::new(),
+            early_committed_certs: HashSet::new(),
         }
     }
 
     /// Clear all certificates from the skip list
     pub fn clear_early_committed_certs(&mut self) {
-        debug!("Clearing skip certificates list");
+        // debug!("Clearing skip certificates list");
         self.early_committed_certs.clear();
     }
 
+    pub fn add_early_committed_certs(&mut self, cert: Certificate) {
+        // debug!("Adding certificate to early committed list from round {} with digest {:?}", 
+        //        cert.round(), 
+        //        cert.digest());
+        self.early_committed_certs.insert(cert); 
+    }
+
+    pub fn remove_early_committed_certs(&mut self, cert: &Certificate) -> bool {
+        let removed = self.early_committed_certs.remove(cert); 
+        if removed {
+            //debug!("Removed certificate from early committed list from round {}", cert.round());
+        }
+        removed
+    }
 
     // For debugging
     // Note: Its quite verbose

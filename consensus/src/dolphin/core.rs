@@ -187,6 +187,9 @@ impl Dolphin {
                             self.shard_last_committed_round.insert(certificate.header.shard_num,certificate.header.round);
                         }
 
+                        // do some GC for state.early_committed_certs
+                        state.remove_early_committed_certs(&certificate);
+
 
                         debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
                         self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
@@ -210,7 +213,9 @@ impl Dolphin {
                             warn!("Failed to output certificate: {}", e);
                         }
                     }
-
+// =======================================================================
+// Lemonshark
+// =======================================================================
                     // TODO: remove
                     state.print_state(self.committee.get_all_primary_ids());
                     self.print_shard_last_committed_round();
@@ -220,13 +225,15 @@ impl Dolphin {
                     let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round);
 
                     for certificate in early_commit_sequence {
+                        state.add_early_committed_certs(certificate.clone());
                         #[cfg(feature = "benchmark")]
                         for digest in certificate.header.payload.keys() {
                             // NOTE: This log entry is used to compute performance.
+                            // TODO: change this so that benchmark can regex it in logs.py
                             info!("Early Committed {} -> {:?}", certificate.header, digest); 
                         }
                     }
-
+//======================================================================
 
                     // If the certificate is not from our virtual round, it cannot help us advance round.
                     if self.virtual_round != virtual_round {
