@@ -162,11 +162,12 @@ impl Committer {
                 for (auth_key, (digest, cert)) in authorities {
                     // Skip if already committed
                     if !state.last_committed.get(auth_key).map_or(true, |last_round| round > last_round) {
+                        debug!("Skipping certificate - already committed");
                         continue;
                     }
                     // Skip if already early committed. 
                     if state.early_committed_certs.iter().any(|skip_cert| skip_cert == cert) {
-                        debug!("Skipping certificate - found in state skip list");
+                        debug!("Skipping certificate - already early-committed");
                         continue;
                     }
                     // Skip if cert is in current round
@@ -176,7 +177,39 @@ impl Committer {
                         continue;
                     }
                     // skip if early fail (collision in shard)
-                    
+                    if cert.header.cross_shard != 0 {
+                        let mut found_matching_cross_shard = false;
+                        if let Some(same_round_certs) = state.dag.get(&round) {
+                            for (_, (_, cross_cert)) in same_round_certs {
+                                // Skip the current cert
+                                if cross_cert == cert {
+                                    continue;
+                                }
+                                // Check if this cert is from the target cross-shard
+                                if cross_cert.header.shard_num == cert.header.cross_shard {
+                                    // Found a matching cross-shard cert in the same round
+                                    found_matching_cross_shard = true;
+                                    debug!("Found matching cross-shard cert in round {} for shard {}", 
+                                        round, cert.header.cross_shard);
+                                    break;
+                                }
+                            }
+                        }
+                        if !found_matching_cross_shard
+                        {
+                            debug!("Cross-shard cert not found");
+                            continue;
+                        }
+                        else 
+                        {
+                            if(cert.header.early_fail)
+                            {
+                                // add to skip list
+                                debug!("early fail!");
+                                continue;
+                            }
+                        }
+                    }
 
                     // skip if already checked
                     
@@ -195,7 +228,7 @@ impl Committer {
                     debug!("Round {}", round);
                     debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
                     debug!("├─ Shard: {}", target_shard);
-                    debug!("└─ Cross-shard: {},{}",cert.header.cross_shard, cert.header.early_fail);
+                    debug!("└─ Cross-shard: {}, {}",cert.header.cross_shard, cert.header.early_fail);
                     // debug!("└─ Ancestry chain (following shard {}):", target_shard);
 
                     // Start the ancestry trace
@@ -226,6 +259,7 @@ impl Committer {
                             else 
                             {
                                 debug!("cross-chain not sufficient");
+                                // add to skip list.
                                 continue;
                             }
                         }
@@ -235,6 +269,11 @@ impl Committer {
                             // This cert will be early committed., 
                             sequence.push(cert.clone()); 
                         }     
+                    }
+                    else
+                    {
+                        debug!("chain not sufficient");
+                        // add to skip list
                     }
                     //debug!("===============================");
                 }
