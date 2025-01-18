@@ -176,6 +176,12 @@ impl Dolphin {
                     // Try to commit.
                     let sequence = self.committer.try_commit(&certificate, &mut state, &mut virtual_state);
 
+                   if !sequence.is_empty()
+                   {
+                    // lemonshark: clean up checked list
+                        state.skipped_certs.clear();
+                   }
+
                     // Log the latest committed round of every authority (for debug).
                     if log_enabled!(log::Level::Debug) {
                         for (name, round) in &state.last_committed {
@@ -191,13 +197,13 @@ impl Dolphin {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
-                        // Everytime a commit is performed, we will have to update shard_last_committed_round
+                        // Lemonshark: verytime a commit is performed, we will have to update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round
                         {
                             self.shard_last_committed_round.insert(certificate.header.shard_num,certificate.header.round);
                         }
 
-                        // do some GC for state.early_committed_certs
+                        // lemonshark: do some GC for state.early_committed_certs
                         state.remove_early_committed_certs(&certificate);
 
 
@@ -211,7 +217,7 @@ impl Dolphin {
                         for digest in certificate.header.payload.keys() {
                             // NOTE: This log entry is used to compute performance.
                             info!("Committed {} -> {:?}", certificate.header, digest);
-                            
+
                         }
 
                         self.tx_commit

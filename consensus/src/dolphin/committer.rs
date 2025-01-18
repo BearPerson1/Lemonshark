@@ -166,10 +166,17 @@ impl Committer {
                         continue;
                     }
                     // Skip if already early committed. 
-                    if state.early_committed_certs.iter().any(|skip_cert| skip_cert == cert) {
+                    if state.early_committed_certs.contains(cert) {
                         debug!("Skipping certificate - already early-committed");
                         continue;
                     }
+                    // skip if checked previously
+                    if state.skipped_certs.contains(cert)
+                    {
+                        debug!("Skipping certificate - already checked");
+                        continue;
+                    }
+
                     // Skip if cert is in current round
                     if cert.header.round == virtual_round
                     {
@@ -206,6 +213,7 @@ impl Committer {
                             {
                                 // add to skip list
                                 debug!("early fail!");
+                                state.skipped_certs.insert(cert.clone());
                                 continue;
                             }
                         }
@@ -260,6 +268,7 @@ impl Committer {
                             {
                                 debug!("cross-chain not sufficient");
                                 // add to skip list.
+                                state.skipped_certs.insert(cert.clone());
                                 continue;
                             }
                         }
@@ -273,6 +282,7 @@ impl Committer {
                     else
                     {
                         debug!("chain not sufficient");
+                        state.skipped_certs.insert(cert.clone());
                         // add to skip list
                     }
                     //debug!("===============================");

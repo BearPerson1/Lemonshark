@@ -22,6 +22,7 @@ pub struct State {
     pub dag: Dag,
 
     pub early_committed_certs: HashSet<Certificate>,
+    pub skipped_certs: HashSet<Certificate>,
 
 }
 
@@ -37,6 +38,7 @@ impl State {
             last_committed: genesis.iter().map(|(x, (_, y))| (*x, y.round())).collect(),
             dag: [(0, genesis)].iter().cloned().collect(),
             early_committed_certs: HashSet::new(),
+            skipped_certs: HashSet::new(),
         }
     }
 
