@@ -44,6 +44,10 @@ pub struct Dolphin {
     // <shard, round num = u64>
     shard_last_committed_round: HashMap <u64,u64>,
 
+    cross_shard_occurance_rate: f64,
+    cross_shard_failure_rate: f64,
+    causal_transactions_collision_rate: f64,
+
 }
 
 impl Dolphin {
@@ -56,6 +60,9 @@ impl Dolphin {
         tx_commit: Sender<Certificate>,
         tx_parents: Sender<Metadata>,
         tx_output: Sender<Certificate>,
+        cross_shard_occurance_rate: f64,
+        cross_shard_failure_rate: f64,
+        causal_transactions_collision_rate: f64,
     ) {
         tokio::spawn(async move {
             Self {
@@ -70,6 +77,9 @@ impl Dolphin {
                 virtual_round: 0,
                 committer: Committer::new(committee, gc_depth),
                 shard_last_committed_round: HashMap::new(),
+                cross_shard_occurance_rate,
+                cross_shard_failure_rate,
+                causal_transactions_collision_rate,
             }
             .run()
             .await;

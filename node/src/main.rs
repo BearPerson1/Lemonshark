@@ -121,6 +121,9 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_commit,
                 tx_metadata,
                 tx_output,
+                parameters.cross_shard_occurance_rate,
+                parameters.cross_shard_failure_rate,
+                parameters.causal_transactions_collision_rate,
             );
 
             Primary::spawn(
