@@ -82,6 +82,9 @@ pub struct Parameters {
     #[cfg(feature = "dolphin")]
     /// The leader timeout value. Denominated in ms.
     pub timeout: u64,
+    pub cross_shard_occurance_rate: f64,
+    pub cross_shard_failure_rate: f64,
+    pub causal_transactions_collision_rate: f64,
 }
 
 impl Default for Parameters {
@@ -96,6 +99,9 @@ impl Default for Parameters {
             max_batch_delay: 100,
             #[cfg(feature = "dolphin")]
             timeout: 5_000,
+            cross_shard_failure_rate : 0.0,
+            cross_shard_occurance_rate : 0.0,
+            causal_transactions_collision_rate: 0.0,
         }
     }
 }
@@ -113,6 +119,10 @@ impl Parameters {
         info!("Max batch delay set to {} ms", self.max_batch_delay);
         #[cfg(feature = "dolphin")]
         info!("Leader timeout set to {} ms", self.timeout);
+        info!("Cross-shard occurrence rate set to {:.2}%", self.cross_shard_occurance_rate * 100.0);
+        info!("Cross-shard failure rate set to {:.2}%", self.cross_shard_failure_rate * 100.0);
+        info!("Causally dependent transaction collision rate set to {:.2}%", self.causal_transactions_collision_rate * 100.0);
+        
     }
 }
 

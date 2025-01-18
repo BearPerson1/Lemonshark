@@ -322,12 +322,9 @@ impl Core {
             .append(certificate.clone(), &self.committee)
         {
 
-
             // Lemonshark: Send full certs
-
             let mut parent_certs = Vec::new();
-
-
+            
             for digest in &parents {
                 if let Ok(Some(bytes)) = self.store.read(digest.to_vec()).await {
                     if let Ok(cert) = bincode::deserialize(&bytes) {

@@ -205,6 +205,7 @@ class LocalCommittee(Committee):
 
 class NodeParameters:
     def __init__(self, json):
+        float_inputs = []
         inputs = []
         try:
             inputs += [json['header_size']]
@@ -217,8 +218,36 @@ class NodeParameters:
             if 'timeout' in json:
                 inputs += [json['timeout']]
 
+            if 'cross_shard_occurance_rate' in json:
+                rate = float(json['cross_shard_occurance_rate'])
+                if not 0.0 <= rate <= 1.0:
+                    raise ConfigError('cross_shard_occurance_rate must be between 0.0 and 1.0')
+                float_inputs.append(rate)
+
+            if 'cross_shard_failure_rate' in json:
+                rate = float(json['cross_shard_failure_rate'])
+                if not 0.0 <= rate <= 1.0:
+                    raise ConfigError('cross_shard_failure_rate must be between 0.0 and 1.0')
+                float_inputs.append(rate)
+
+            if 'causal_transactions_collision_rate' in json:
+                rate = float(json['causal_transactions_collision_rate'])
+                if not 0.0 <= rate <= 1.0:
+                    raise ConfigError('causal_transactions_collision_rate must be between 0.0 and 1.0')
+                float_inputs.append(rate)
+
+            if not all(isinstance(x, int) for x in inputs):
+                raise ConfigError('Invalid integer parameters type')
+
+            # Validate float parameters if any exist
+            if float_inputs and not all(isinstance(x, float) for x in float_inputs):
+                raise ConfigError('Invalid float parameters type')
+
         except KeyError as e:
             raise ConfigError(f'Malformed parameters: missing key {e}')
+
+        except ValueError as e:
+            raise ConfigError(f'Invalid parameter value: {e}')
 
         if not all(isinstance(x, int) for x in inputs):
             raise ConfigError('Invalid parameters type')

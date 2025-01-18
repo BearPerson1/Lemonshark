@@ -29,7 +29,10 @@ def local(ctx, debug=True):
         'sync_retry_delay': 10_000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
-        'max_batch_delay': 200  # ms
+        'max_batch_delay': 200,  # ms
+        'cross_shard_occurance_rate': 0.2,
+        'cross_shard_failure_rate': 0.3,
+        'causal_transactions_collision_rate':0.1
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)
@@ -114,7 +117,10 @@ def remote(ctx, debug=True):
         'sync_retry_delay': 5_000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
-        'max_batch_delay': 200  # ms
+        'max_batch_delay': 200,  # ms
+        'cross_shard_occurance_rate': 0.3,
+        'cross_shard_failure_rate': 0.3,
+        'causal_transactions_collision_rate':0.1
     }
     try:
         Bench(ctx).run(bench_params, node_params, debug)
