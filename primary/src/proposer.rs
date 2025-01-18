@@ -12,6 +12,7 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use std::collections::BTreeSet;
+use rand::Rng;
 
 #[cfg(test)]
 #[path = "tests/proposer_tests.rs"]
@@ -51,6 +52,9 @@ pub struct Proposer {
     // Lemonshark:
     committee: Committee,
     last_parent_certificates: Vec<Certificate>,
+    cross_shard_occurance_rate: f64,
+    cross_shard_failure_rate: f64,
+    causal_transactions_collision_rate: f64,
 }
 
 impl Proposer {
@@ -65,6 +69,9 @@ impl Proposer {
         rx_workers: Receiver<(Digest, WorkerId)>,
         tx_core: Sender<Header>,
         rx_consensus: Receiver<Metadata>,
+        cross_shard_occurance_rate: f64,
+        cross_shard_failure_rate: f64,
+        causal_transactions_collision_rate: f64,
         
     ) {
         let genesis = Certificate::genesis(committee)
@@ -90,6 +97,10 @@ impl Proposer {
                 metadata: VecDeque::new(),
                 committee:committee_clone,
                 last_parent_certificates: Vec::new(),
+                cross_shard_occurance_rate,
+                cross_shard_failure_rate,
+                causal_transactions_collision_rate,
+
             }
             .run()
             .await;
@@ -110,6 +121,40 @@ impl Proposer {
         }
     }
     
+    // function to roll a dice to decide if this shard is cross-shard
+    // if yes, it takes another shard thats not itself. 
+    // currently it just picks the next subsequent shard
+    // shouldnt matter 
+
+    fn determine_cross_shard(&self, shard_num:u64)
+    -> (u64, bool)
+    {
+        // do we cross-shard?
+        if rand::thread_rng().gen_bool(self.cross_shard_occurance_rate)
+        {
+            let mut cross_shard_num:u64 = (shard_num + 1)% self.committee.size() as u64;
+            if cross_shard_num == 0
+            {
+                cross_shard_num = self.committee.size() as u64;
+            }
+            if rand::thread_rng().gen_bool(self.cross_shard_failure_rate)
+            {
+                (cross_shard_num,true)
+            }
+            else
+            {
+                (cross_shard_num,false)
+            }
+        }
+        else {
+            // no cross-shard
+            // by default its false. 
+            (0,false)
+        }
+    }
+
+
+    
     async fn make_header(&mut self) {
         // Make a new header.
         
@@ -118,7 +163,7 @@ impl Proposer {
         
         debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
         let mut parents_id_shard = BTreeSet::new();
-
+        let (cross_shard,early_fail) : (u64,bool) = self.determine_cross_shard(shard_num);
 
 
         for parent_cert in &self.last_parent_certificates 
@@ -134,7 +179,12 @@ impl Proposer {
             parents_id_shard,
             self.round,
             shard_num
-        );
+        ); 
+        if cross_shard != 0
+        {
+            debug!("Cross-shard going to shard {}, early fail->{}",cross_shard,early_fail);
+        }
+
 
 
         let header = Header::new(
@@ -146,6 +196,8 @@ impl Proposer {
             &mut self.signature_service,
             shard_num,
             parents_id_shard, 
+            cross_shard,
+            early_fail,
         )
         .await;
         debug!("Created header {:?}", header);

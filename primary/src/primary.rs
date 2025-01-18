@@ -205,6 +205,9 @@ impl Primary {
             /* rx_workers */ rx_our_digests,
             /* tx_core */ tx_headers,
             /* rx_consensus */ rx_metadata,
+            parameters.cross_shard_occurance_rate,
+            parameters.cross_shard_failure_rate,
+            parameters.causal_transactions_collision_rate,
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.

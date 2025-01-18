@@ -96,6 +96,10 @@ impl State {
                     //ebug!("│  ├─ Digest: {:?}", digest);
                     debug!("│  ├─ Certificate Round: {}", cert.round());
                     debug!("│  ├─ Shard: {}", cert.header.shard_num);
+                    if (cert.header.cross_shard!=0)
+                    {
+                        debug!("│  ├─ Cross-Shard: {}, {}", cert.header.cross_shard,cert.header.early_fail);
+                    }
                     debug!("│  └─ Parents:");
                     // For each parent, print its information
                     if cert.header.parents_id_shard.is_empty() {

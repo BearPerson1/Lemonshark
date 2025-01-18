@@ -84,17 +84,17 @@ impl Committer {
         let mut total_children = 0;
         let mut children_per_shard: HashMap<u64, u64> = HashMap::new();
         
-        debug!("\n=== Starting Certificate Children Count ===");
-        debug!("Analyzing certificate from round {} by author {:?}", 
-               round, 
-               self.committee.get_all_primary_ids()[&cert.header.author]);
-        debug!("Certificate shard: {}", cert.header.shard_num);
+        // debug!("\n=== Starting Certificate Children Count ===");
+        // debug!("Analyzing certificate from round {} by author {:?}", 
+        //        round, 
+        //        self.committee.get_all_primary_ids()[&cert.header.author]);
+        // debug!("Certificate shard: {}", cert.header.shard_num);
 
         // Look at the next round in the DAG
         if let Some(next_round_certs) = state.dag.get(&(round + 1)) {
-            debug!("Found {} certificates in round {}", 
-                   next_round_certs.len(), 
-                   round + 1);
+            // debug!("Found {} certificates in round {}", 
+            //        next_round_certs.len(), 
+            //        round + 1);
 
             for (auth_key, (_, child_cert)) in next_round_certs {
                 // debug!("├─ Checking potential child certificate:");
@@ -115,9 +115,9 @@ impl Committer {
                             .entry(child_cert.header.shard_num)
                             .or_insert(0) += 1;
 
-                        debug!("│     ✓ Found child reference!");
-                        debug!("│     ├─ Parent ID: {}", parent_id);
-                        debug!("│     └─ Parent Shard: {}", parent_shard);
+                        // debug!("│     ✓ Found child reference!");
+                        // debug!("│     ├─ Parent ID: {}", parent_id);
+                        // debug!("│     └─ Parent Shard: {}", parent_shard);
                         
                         // Break since we found this parent reference
                         break;
@@ -125,16 +125,16 @@ impl Committer {
                 }
             }
         } else {
-            debug!("No certificates found in round {}", round + 1);
+            //debug!("No certificates found in round {}", round + 1);
         }
 
-        debug!("\n=== Certificate Children Count Summary ===");
-        debug!("Total children found: {}", total_children);
-        // debug!("Children distribution across shards:");
-        // for (shard, count) in &children_per_shard {
-        //     debug!("├─ Shard {}: {} children", shard, count);
-        // }
-        debug!("======================================\n");
+        // debug!("\n=== Certificate Children Count Summary ===");
+        // debug!("Total children found: {}", total_children);
+        // // debug!("Children distribution across shards:");
+        // // for (shard, count) in &children_per_shard {
+        // //     debug!("├─ Shard {}: {} children", shard, count);
+        // // }
+        // debug!("======================================\n");
 
         (total_children, children_per_shard)
     }
@@ -175,6 +175,10 @@ impl Committer {
                         debug!("Skipping certificate - In same virtual round {} vs {}",cert.header.round,virtual_round);
                         continue;
                     }
+                    // skip if early fail (collision in shard)
+                    
+
+                    // skip if already checked
                     
                     debug!("Checking certificate children for early commit consideration");
                     let (child_count, shard_counts) = self.count_certificate_children(cert, *round, state);
@@ -188,25 +192,49 @@ impl Committer {
 
                     let target_shard = cert.header.shard_num;
                     debug!("\nStarting ancestry trace for certificate:");
-                    // debug!("Round {}", round);
-                    // debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
-                    // debug!("├─ Shard: {}", target_shard);
+                    debug!("Round {}", round);
+                    debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
+                    debug!("├─ Shard: {}", target_shard);
+                    debug!("└─ Cross-shard: {},{}",cert.header.cross_shard, cert.header.early_fail);
                     // debug!("└─ Ancestry chain (following shard {}):", target_shard);
 
-                    // Recursive function to print all ancestors of the same shard
                     // Start the ancestry trace
                     let mut oldest_chain_ancestor_round = self.get_oldest_chain_ancestor(cert, target_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
                 
-                    // debug!("The oldest being: {}", oldest_chain_ancestor_round);
-                    // debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
+                    debug!("The oldest being: {}", oldest_chain_ancestor_round);
+                    debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
 
                     // This is where we do our first check:
                     // If it has the chain. 
                     if oldest_chain_ancestor_round - shard_last_committed_round.get(&target_shard).copied().unwrap_or(0) <= 1
                     {
-                        debug!("Sufficient Chain");
-                        // This cert will be early committed., 
-                        sequence.push(cert.clone()); 
+                        // check if crossshard
+                        if cert.header.cross_shard != 0
+                        {
+                            debug!("Checking Cross-chain");
+                            let mut oldest_cross_chain_ancestor_round = self.get_oldest_chain_ancestor(cert,cert.header.cross_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
+
+                            debug!("The oldest cross being: {}", oldest_cross_chain_ancestor_round);
+                            debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&cert.header.cross_shard).copied().unwrap_or(0));
+
+                            if oldest_cross_chain_ancestor_round - shard_last_committed_round.get(&cert.header.cross_shard).copied().unwrap_or(0) <= 1
+                            {
+                                debug!("Sufficient Chain");
+                                // This cert will be early committed., 
+                                sequence.push(cert.clone()); 
+                            }
+                            else 
+                            {
+                                debug!("cross-chain not sufficient");
+                                continue;
+                            }
+                        }
+                        else 
+                        {
+                            debug!("Sufficient Chain");
+                            // This cert will be early committed., 
+                            sequence.push(cert.clone()); 
+                        }     
                     }
                     //debug!("===============================");
                 }

@@ -53,6 +53,8 @@ pub struct Header {
     pub signature: Signature,
     pub shard_num: u64,
     pub parents_id_shard: BTreeSet<(u64, u64)>,
+    pub cross_shard: u64,
+    pub early_fail: bool,
 
 }
 
@@ -66,6 +68,8 @@ impl Header {
         signature_service: &mut SignatureService,
         shard_num: u64,
         parents_id_shard: BTreeSet<(u64, u64)>,
+        cross_shard: u64,
+        early_fail: bool,
     ) -> Self {
         let header = Self {
             author,
@@ -77,6 +81,8 @@ impl Header {
             signature: Signature::default(),
             shard_num,
             parents_id_shard, 
+            cross_shard,
+            early_fail,
         };
         let id = header.digest();
         let signature = signature_service.request_signature(id.clone()).await;
