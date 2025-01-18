@@ -123,36 +123,32 @@ impl Proposer {
     
     // function to roll a dice to decide if this shard is cross-shard
     // if yes, it takes another shard thats not itself. 
-    // currently it just picks the next subsequent shard
-    // shouldnt matter 
-
-    fn determine_cross_shard(&self, shard_num:u64)
-    -> (u64, bool)
-    {
+    // currently it just picks a random other 
+    fn determine_cross_shard(&self, shard_num: u64) -> (u64, bool) {
         // do we cross-shard?
-        if rand::thread_rng().gen_bool(self.cross_shard_occurance_rate)
-        {
-            let mut cross_shard_num:u64 = (shard_num + 1)% self.committee.size() as u64;
-            if cross_shard_num == 0
-            {
-                cross_shard_num = self.committee.size() as u64;
+        if rand::thread_rng().gen_bool(self.cross_shard_occurance_rate) {
+            let mut rng = rand::thread_rng();
+            let mut cross_shard_num = rng.gen_range(1,self.committee.size()) as u64;
+            
+            if cross_shard_num == shard_num {
+                cross_shard_num = if cross_shard_num >= self.committee.size() as u64 {
+                    1
+                } else {
+                    cross_shard_num + 1
+                };
             }
-            if rand::thread_rng().gen_bool(self.cross_shard_failure_rate)
-            {
-                (cross_shard_num,true)
+
+            if rand::thread_rng().gen_bool(self.cross_shard_failure_rate) {
+                (cross_shard_num, true)
+            } else {
+                (cross_shard_num, false)
             }
-            else
-            {
-                (cross_shard_num,false)
-            }
-        }
-        else {
+        } else {
             // no cross-shard
             // by default its false. 
-            (0,false)
+            (0, false)
         }
     }
-
 
     
     async fn make_header(&mut self) {
