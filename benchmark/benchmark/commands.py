@@ -45,16 +45,17 @@ class CommandMaker:
         v = '-vvv' if debug else '-vv'
         return (f'./node {v} run --keys {keys} --committee {committee} '
                 f'--store {store} --parameters {parameters} worker --id {id}')
-
+                
     @staticmethod
-    def run_client(address, size, rate, nodes):
+    def run_client(address, size, rate, nodes, longest_causal_chain=1):  # Change here
         assert isinstance(address, str)
         assert isinstance(size, int) and size > 0
         assert isinstance(rate, int) and rate >= 0
         assert isinstance(nodes, list)
+        assert isinstance(longest_causal_chain, int) and longest_causal_chain >= 0  # Add validation
         assert all(isinstance(x, str) for x in nodes)
         nodes = f'--nodes {" ".join(nodes)}' if nodes else ''
-        return f'./benchmark_client {address} --size {size} --rate {rate} {nodes}'
+        return f'./benchmark_client {address} --size {size} --rate {rate} {nodes} --longest_causal_chain {longest_causal_chain}'
 
     @staticmethod
     def kill():

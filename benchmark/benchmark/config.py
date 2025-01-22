@@ -290,6 +290,10 @@ class BenchParameters:
 
             self.runs = int(json['runs']) if 'runs' in json else 1
 
+            self.longest_causal_chain = int(json.get('longest_causal_chain', 1))
+            if self.longest_causal_chain < 0:
+                raise ConfigError('longest_causal_chain must be non-negative')
+
             if 'protocol' not in json:
                 self.protocol = 'tusk'
             elif json['protocol'] == 'tusk' or json['protocol'] == 'dolphin':

@@ -22,6 +22,7 @@ async fn main() -> Result<()> {
         .args_from_usage("--size=<INT> 'The size of each transaction in bytes'")
         .args_from_usage("--rate=<INT> 'The rate (txs/s) at which to send the transactions'")
         .args_from_usage("--nodes=[ADDR]... 'Network addresses that must be reachable before starting the benchmark.'")
+        .args_from_usage("--longest_causal_chain=<INT> 'The longest causal chain value'")
         .setting(AppSettings::ArgRequiredElseHelp)
         .get_matches();
 
@@ -51,7 +52,11 @@ async fn main() -> Result<()> {
         .map(|x| x.parse::<SocketAddr>())
         .collect::<Result<Vec<_>, _>>()
         .context("Invalid socket address format")?;
-
+    let longest_causal_chain = matches
+        .value_of("longest_causal_chain")
+        .unwrap()
+        .parse::<u64>()
+        .context("The longest_causal_chain must be a non-negative integer")?;
     info!("Node address: {}", target);
 
     // NOTE: This log entry is used to compute performance.
@@ -65,6 +70,8 @@ async fn main() -> Result<()> {
         size,
         rate,
         nodes,
+        longest_causal_chain,
+
     };
 
     // Wait for all nodes to be online and synchronized.
@@ -79,6 +86,7 @@ struct Client {
     size: usize,
     rate: u64,
     nodes: Vec<SocketAddr>,
+    longest_causal_chain: u64,
 }
 
 impl Client {
@@ -92,6 +100,7 @@ impl Client {
                 "Transaction size must be at least 9 bytes",
             ));
         }
+        info!("longest_causal_chain: {}",self.longest_causal_chain);
 
         // Connect to the mempool.
         let stream = TcpStream::connect(self.target)

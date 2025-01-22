@@ -19,7 +19,8 @@ def local(ctx, debug=True):
         'rate': 50_000,
         'tx_size': 512,
         'duration': 20,
-        'protocol': 'dolphin'
+        'protocol': 'dolphin',
+        'longest_causal_chain':100 # longest chain of causally dependant trans a client will send
     }
     node_params = {
         'timeout': 1_000,  # ms
@@ -30,7 +31,7 @@ def local(ctx, debug=True):
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'cross_shard_occurance_rate': 1.0,
+        'cross_shard_occurance_rate': 0.0,
         'cross_shard_failure_rate': 0.3,
         'causal_transactions_collision_rate':0.1
     }
@@ -107,7 +108,8 @@ def remote(ctx, debug=True):
         'tx_size': 512,
         'duration': 300,
         'runs': 1,
-        'protocol': 'dolphin'
+        'protocol': 'dolphin',
+        'longest_causal_chain': 100
     }
     node_params = {
         'timeout': 5_000,  # ms
