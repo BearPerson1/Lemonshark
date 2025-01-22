@@ -14,7 +14,7 @@ use bytes::Bytes;
 use config::{Committee, KeyPair, Parameters, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
 use futures::sink::SinkExt as _;
-use log::info;
+use log::{info,debug};
 use network::{MessageHandler, Receiver as NetworkReceiver, Writer};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -132,6 +132,13 @@ impl Primary {
             "Primary {} listening to workers messages on {}",
             name, address
         );
+
+        // TODO: delete
+        let worker_endpoints = committee.get_worker_clients(&name);
+        for endpoint in worker_endpoints {
+            debug!("Worker transaction endpoint: {}", endpoint);
+        }
+
 
         // The `Synchronizer` provides auxiliary methods helping to `Core` to sync.
         let synchronizer = Synchronizer::new(

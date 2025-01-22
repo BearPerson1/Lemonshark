@@ -280,6 +280,28 @@ impl Committee {
             })
             .collect()
     }
+    // for a particular primary, get all the clients that its workers talk to.
+    pub fn get_worker_clients(&self, primary_key: &PublicKey) -> Vec<SocketAddr> {
+        // Get the authority for this primary
+        if let Some(authority) = self.authorities.get(primary_key) {
+            // Get the stake which represents number of workers
+            let num_workers = authority.stake as u32;
+            
+            // Create vector of worker IDs and get their transaction endpoints
+            (0..num_workers)
+                .filter_map(|id| {
+                    // Simply use the id directly since WorkerId is a type alias for u32
+                    match self.worker(primary_key, &id) {
+                        Ok(worker) => Some(worker.transactions),
+                        Err(_) => None
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+  
 }
 
 #[derive(Serialize, Deserialize)]
