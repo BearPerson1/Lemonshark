@@ -42,7 +42,7 @@ impl Processor {
 
                 // Deliver the batch's digest.
                 let message = match own_digest {
-                    true => WorkerPrimaryMessage::OurBatch(digest, id),
+                    true => WorkerPrimaryMessage::OurBatch(digest, id, None),  // Added None as the third argument
                     false => WorkerPrimaryMessage::OthersBatch(digest, id),
                 };
                 let message = bincode::serialize(&message)

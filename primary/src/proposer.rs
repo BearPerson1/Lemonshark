@@ -34,7 +34,7 @@ pub struct Proposer {
     /// Receives the parents to include in the next header (along with their round number).
     rx_core: Receiver<(Vec<Certificate>, Round)>,
     /// Receives the batches' digests from our workers.
-    rx_workers: Receiver<(Digest, WorkerId)>,
+    rx_workers: Receiver<(Digest, WorkerId,Option<u64>)>,
     /// Sends newly created headers to the `Core`.
     tx_core: Sender<Header>,
     /// The current consensus round.
@@ -45,7 +45,7 @@ pub struct Proposer {
     /// Holds the certificates' ids waiting to be included in the next header.
     last_parents: Vec<Digest>,
     /// Holds the batches' digests waiting to be included in the next header.
-    digests: Vec<(Digest, WorkerId)>,
+    digests: Vec<(Digest, WorkerId, Option<u64>)>,
     /// Keeps track of the size (in bytes) of batches' digests that we received so far.
     payload_size: usize,
     /// The metadata to include in the next header.
@@ -69,7 +69,7 @@ impl Proposer {
         header_size: usize,
         max_header_delay: u64,
         rx_core: Receiver<(Vec<Certificate>, Round)>,
-        rx_workers: Receiver<(Digest, WorkerId)>,
+        rx_workers: Receiver<(Digest, WorkerId, Option<u64>)>,  
         tx_core: Sender<Header>,
         rx_consensus: Receiver<Metadata>,
         cross_shard_occurance_rate: f64,
@@ -162,6 +162,23 @@ impl Proposer {
         
         let shard_num = self.determine_shard_num(self.committee.get_primary_id(&self.name), self.round, self.committee.size() as u64);
         
+
+        // lemonshark
+        let special_txn_ids: Vec<u64> = self.digests.iter()
+        .filter_map(|(_digest, _worker_id, special_id)| *special_id)
+        .collect();
+
+        // Add more detailed debugging
+        if !special_txn_ids.is_empty() {
+            debug!(
+                "Header for round {} contains {} special transaction(s): {:?}", 
+                self.round,
+                special_txn_ids.len(),
+                special_txn_ids
+            );
+        }
+        //=============================
+
         debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
         let mut parents_id_shard = BTreeSet::new();
         let (cross_shard,early_fail) : (u64,bool) = self.determine_cross_shard(shard_num);
@@ -191,7 +208,7 @@ impl Proposer {
         let header = Header::new(
             self.name,
             self.round,
-            self.digests.drain(..).collect(),
+            self.digests.drain(..).map(|(d, w, _)| (d, w)).collect(), // Extract just digest and worker_id
             self.last_parents.drain(..).collect(),
             self.metadata.pop_back(),
             &mut self.signature_service,
@@ -234,7 +251,7 @@ impl Proposer {
                 header.round, 
                 header.shard_num);
         }
-
+        //===================
 
         // Send the new header to the `Core` that will broadcast and process it.
         self.tx_core
@@ -285,9 +302,9 @@ impl Proposer {
                     self.last_parent_certificates = parent_certs;
 
                 }
-                Some((digest, worker_id)) = self.rx_workers.recv() => {
+                Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
                     self.payload_size += digest.size();
-                    self.digests.push((digest, worker_id));
+                    self.digests.push((digest, worker_id, special_txn_id));
                 }
                 Some(metadata) = self.rx_consensus.recv() => {
                     self.metadata.push_front(metadata);

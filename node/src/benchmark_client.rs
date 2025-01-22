@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-
+use std::sync::{Arc, Mutex};
 
 //lemonshark
 use network::receiver::{Receiver, MessageHandler, Writer};
@@ -23,9 +23,47 @@ use primary::ClientMessage; // Add this import
 use primary::messages::{Header, Certificate};
 
 #[derive(Clone)]
-struct ClientMessageHandler;
+struct ClientMessageHandler {
+    tx_chain: tokio::sync::mpsc::Sender<ChainMessage>,
+    last_causal_chain_counter: Arc<Mutex<u64>>,
+}
 
+#[derive(Clone)]
+struct ChainMessage {
+    should_send: bool,
+    counter: u64,
+}
 
+impl ClientMessageHandler {
+    fn new(tx_chain: tokio::sync::mpsc::Sender<ChainMessage>) -> Self {
+        Self {
+            tx_chain,
+            last_causal_chain_counter: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    async fn process_primary_message(&self, msg: &ClientMessage) -> Result<ChainMessage, Box<dyn Error>> {
+        let counter = {
+            let mut counter = self.last_causal_chain_counter.lock().unwrap();
+            *counter += 1;
+            *counter
+        };
+        
+        // Set should_send based on counter value
+        let should_send = if counter > 2 {
+            false
+        } else {
+            true
+        };
+    
+        Ok(ChainMessage {
+            should_send,
+            counter,
+        })
+    }
+
+    
+}
 #[async_trait]
 impl MessageHandler for ClientMessageHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
@@ -39,6 +77,13 @@ impl MessageHandler for ClientMessageHandler {
                 info!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
                 info!("└─ Payload Size: {} bytes", msg.header.payload.len());
                 
+                // lemonshark:
+                let send_next_check = self.process_primary_message(&msg).await?;
+                if send_next_check.should_send {
+                    if let Err(e) = self.tx_chain.send(send_next_check).await {
+                        warn!("Failed to request new causal chain transaction: {}", e);
+                    }
+                }
                 Ok(())
             }
             Err(e) => {
@@ -149,13 +194,20 @@ impl Client {
         const PRECISION: u64 = 20; // Sample precision.
         const BURST_DURATION: u64 = 1000 / PRECISION;
 
+        // Create channel for receiving signals from the message handler
+        let (tx_chain, mut rx_chain) = tokio::sync::mpsc::channel::<ChainMessage>(100);
+        let handler = ClientMessageHandler::new(tx_chain);
+        Receiver::spawn(self.primary_to_client_addr, handler);
+
+
         // The transaction size must be at least 16 bytes to ensure all txs are different.
         if self.size < 9 {
             return Err(anyhow::Error::msg(
                 "Transaction size must be at least 9 bytes",
             ));
         }
-        info!("longest_causal_chain: {}",self.longest_causal_chain);
+        // Lemonshark
+        info!("longest_causal_chain: {}",self.longest_causal_chain);   
 
         // Connect to the mempool.
         let stream = TcpStream::connect(self.target)
@@ -171,10 +223,40 @@ impl Client {
         let interval = interval(Duration::from_millis(BURST_DURATION));
         tokio::pin!(interval);
 
+
+        // lemonshark: Send initial causal chain transaction if enabled
+        if self.longest_causal_chain != 0 {
+            tx.clear();
+            tx.put_u8(2u8); // Special transaction type
+            tx.put_u64(0);
+            tx.resize(self.size, 0u8);
+            let bytes = tx.split().freeze();
+            transport.send(bytes).await?;
+            info!("Sent initial causal chain transaction");
+        }
+
         // NOTE: This log entry is used to compute performance.
         info!("Start sending transactions");
 
         'main: loop {
+            // Lemonshark: Check for message from handler about sending new causal chain transaction
+
+            if let Ok(chain_message) = rx_chain.try_recv() {
+                if chain_message.should_send && self.longest_causal_chain != 0 {
+                    tx.clear();
+                    tx.put_u8(2u8);
+                    tx.put_u64(chain_message.counter);
+                    tx.resize(self.size, 0u8);
+                    let bytes = tx.split().freeze();
+                    if let Err(e) = transport.send(bytes).await {
+                        warn!("Failed to send causal chain transaction: {}", e);
+                        break 'main;
+                    }
+                    info!("Sent causal chain transaction {}", chain_message.counter);
+                    continue;
+                }
+            }
+
             interval.as_mut().tick().await;
             let now = Instant::now();
 
@@ -207,18 +289,8 @@ impl Client {
         Ok(())
     }
 
-    fn start_receiver(&self) {
-        let handler = ClientMessageHandler;
-        // Using the pre-defined primary_to_client_addr
-        Receiver::spawn(self.primary_to_client_addr, handler);
-        debug!("Started receiver on {}", self.primary_to_client_addr);
-    }
 
     pub async fn wait(&self) {
-        self.start_receiver();
-
-        // Wait for all nodes to be online.
-        
         info!("Waiting for all nodes to be online...");
         join_all(self.nodes.iter().cloned().map(|address| {
             tokio::spawn(async move {

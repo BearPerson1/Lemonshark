@@ -20,7 +20,7 @@ def local(ctx, debug=True):
         'tx_size': 512,
         'duration': 20,
         'protocol': 'dolphin',
-        'longest_causal_chain':100 # longest chain of causally dependant trans a client will send
+        'longest_causal_chain':10 # longest chain of causally dependant trans a client will send
     }
     node_params = {
         'timeout': 1_000,  # ms
@@ -109,7 +109,7 @@ def remote(ctx, debug=True):
         'duration': 300,
         'runs': 1,
         'protocol': 'dolphin',
-        'longest_causal_chain': 100
+        'longest_causal_chain': 10
     }
     node_params = {
         'timeout': 5_000,  # ms

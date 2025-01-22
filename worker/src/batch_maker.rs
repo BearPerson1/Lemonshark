@@ -1,14 +1,15 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::quorum_waiter::QuorumWaiterMessage;
 use crate::worker::WorkerMessage;
+use log::{info,debug};
 use bytes::Bytes;
 #[cfg(feature = "benchmark")]
 use crypto::Digest;
 use crypto::PublicKey;
 #[cfg(feature = "benchmark")]
 use ed25519_dalek::{Digest as _, Sha512};
-#[cfg(feature = "benchmark")]
-use log::info;
+
+
 use network::ReliableSender;
 #[cfg(feature = "benchmark")]
 use std::convert::TryInto as _;
@@ -104,19 +105,40 @@ impl BatchMaker {
         let size = self.current_batch_size;
 
         // Look for sample txs (they all start with 0) and gather their txs id (the next 8 bytes).
+
+        // lemonshark: also 2: our special causal transactions
         #[cfg(feature = "benchmark")]
-        let tx_ids: Vec<_> = self
+        let tx_ids: Vec<(u8, u64)> = self
             .current_batch
             .iter()
-            .filter(|tx| tx[0] == 0u8 && tx.len() > 8)
-            .filter_map(|tx| tx[1..9].try_into().ok())
+            .filter(|tx| (tx[0] == 0u8 || tx[0] == 2u8) && tx.len() > 8)
+            .filter_map(|tx| {
+                tx[1..9].try_into()
+                    .ok()
+                    .map(|id| (tx[0], u64::from_be_bytes(id)))
+            })
             .collect();
-
+    
+        // Get the special transaction ID if there is one
+        let special_txn_id = tx_ids.iter()
+        .find(|(tx_type, _)| *tx_type == 2)
+        .map(|(_, id)| *id);
         // Serialize the batch.
         self.current_batch_size = 0;
         let batch: Vec<_> = self.current_batch.drain(..).collect();
-        let message = WorkerMessage::Batch(batch);
+
+        // todo: delete
+        debug!("=== Batch Sending Details ===");
+        debug!("Number of transactions: {}", batch.len());
+        debug!("Special transaction ID: {:?}", special_txn_id);
+        debug!("Worker addresses count: {}", self.workers_addresses.len());
+        debug!("Current batch size before clearing: {}", self.current_batch_size);
+
+
+        let message = WorkerMessage::Batch(batch, special_txn_id);
         let serialized = bincode::serialize(&message).expect("Failed to serialize our own batch");
+    
+        
 
         #[cfg(feature = "benchmark")]
         {
@@ -126,16 +148,24 @@ impl BatchMaker {
                     .try_into()
                     .unwrap(),
             );
-
-            for id in tx_ids {
+    
+            for (tx_type, id) in tx_ids {
                 // NOTE: This log entry is used to compute performance.
-                info!(
-                    "Batch {:?} contains sample tx {}",
-                    digest,
-                    u64::from_be_bytes(id)
-                );
+                match tx_type {
+                    0 => info!(
+                        "Batch {:?} contains sample tx {}",
+                        digest,
+                        id
+                    ),
+                    2 => info!(
+                        "Batch {:?} contains causal-chain tx {}",
+                        digest,
+                        id
+                    ),
+                    _ => {} // Should never happen due to the filter above
+                }
             }
-
+    
             // NOTE: This log entry is used to compute performance.
             info!("Batch {:?} contains {} B", digest, size);
         }
@@ -144,6 +174,9 @@ impl BatchMaker {
         let (names, addresses): (Vec<_>, _) = self.workers_addresses.iter().cloned().unzip();
         let bytes = Bytes::from(serialized.clone());
         let handlers = self.network.broadcast(addresses, bytes).await;
+
+
+        
 
         // Send the batch through the deliver channel for further processing.
         self.tx_message
