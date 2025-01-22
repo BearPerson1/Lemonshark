@@ -14,7 +14,7 @@ use bytes::Bytes;
 use config::{Committee, KeyPair, Parameters, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
 use futures::sink::SinkExt as _;
-use log::{info,debug};
+use log::{info,debug,error};
 use network::{MessageHandler, Receiver as NetworkReceiver, Writer};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
@@ -23,7 +23,8 @@ use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-
+use network::simple_sender::SimpleSender;
+use tokio::sync::mpsc::UnboundedSender;
 
 
 /// The default channel capacity for each channel of the primary.
@@ -31,6 +32,14 @@ pub const CHANNEL_CAPACITY: usize = 1_000;
 
 /// The round number.
 pub type Round = u64;
+// lemonshark: message sent by primary to client
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ClientMessage {
+    Header(Header),
+}
+
+
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum PrimaryMessage {
@@ -69,12 +78,11 @@ impl Primary {
         tx_output: Sender<Certificate>,
         rx_commit: Receiver<Certificate>,
         rx_metadata: Receiver<Metadata>,
+        tx_client: Sender<ClientMessage>
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);
-
         let (tx_parents, rx_parents) = channel::<(Vec<Certificate>, Round)>(CHANNEL_CAPACITY);
-        
         let (tx_headers, rx_headers) = channel(CHANNEL_CAPACITY);
         let (tx_sync_headers, rx_sync_headers) = channel(CHANNEL_CAPACITY);
         let (tx_sync_certificates, rx_sync_certificates) = channel(CHANNEL_CAPACITY);
@@ -83,6 +91,7 @@ impl Primary {
         let (tx_primary_messages, rx_primary_messages) = channel(CHANNEL_CAPACITY);
         let (tx_cert_requests, rx_cert_requests) = channel(CHANNEL_CAPACITY);
 
+        let (tx_client_messages, mut rx_client_messages) = channel(CHANNEL_CAPACITY);
         // Write the parameters to the logs.
         parameters.log();
 
@@ -211,6 +220,7 @@ impl Primary {
             parameters.cross_shard_occurance_rate,
             parameters.cross_shard_failure_rate,
             parameters.causal_transactions_collision_rate,
+            tx_client_messages,
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.

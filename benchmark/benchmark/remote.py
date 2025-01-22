@@ -226,6 +226,7 @@ class Bench:
         # for the faulty nodes to be online).
         Print.info('Booting clients...')
         workers_addresses = committee.workers_addresses(faults)
+        
         primary_to_client_addresses = committee.primary_to_client_addresses(self.faults)
         rate_share = ceil(rate / committee.workers())
         for i, addresses in enumerate(workers_addresses):

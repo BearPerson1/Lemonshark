@@ -13,6 +13,35 @@ use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+
+//lemonshark
+use network::receiver::{Receiver, MessageHandler, Writer};
+use async_trait::async_trait;
+use bytes::Bytes;
+use std::error::Error;
+use primary::messages::Header;
+
+#[derive(Clone)]
+struct ClientMessageHandler;
+
+#[async_trait]
+impl MessageHandler for ClientMessageHandler {
+    async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
+        // Deserialize the bytes into a Header
+        match bincode::deserialize::<Header>(&message) {
+            Ok(header) => {
+                info!("[Received Header] - Round: {}, Shard: {}", header.round, header.shard_num);
+                // You can add more header fields to print if needed
+            }
+            Err(e) => {
+                log::error!("Failed to deserialize header: {}", e);
+            }
+        }
+        Ok(())
+    }
+}
+
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let matches = App::new(crate_name!())
@@ -168,8 +197,18 @@ impl Client {
         Ok(())
     }
 
+    fn start_receiver(&self) {
+        let handler = ClientMessageHandler;
+        // Using the pre-defined primary_to_client_addr
+        Receiver::spawn(self.primary_to_client_addr, handler);
+        debug!("Started receiver on {}", self.primary_to_client_addr);
+    }
+
     pub async fn wait(&self) {
+        self.start_receiver();
+
         // Wait for all nodes to be online.
+        
         info!("Waiting for all nodes to be online...");
         join_all(self.nodes.iter().cloned().map(|address| {
             tokio::spawn(async move {

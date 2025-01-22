@@ -7,7 +7,7 @@ mod core;
 mod garbage_collector;
 mod header_waiter;
 mod helper;
-mod messages;
+pub mod messages;
 mod payload_receiver;
 mod primary;
 mod proposer;
@@ -18,4 +18,4 @@ mod synchronizer;
 mod common;
 
 pub use crate::messages::{Certificate, Header, Metadata};
-pub use crate::primary::{Primary, PrimaryWorkerMessage, Round, WorkerPrimaryMessage};
+pub use crate::primary::{Primary, PrimaryWorkerMessage, Round, WorkerPrimaryMessage,ClientMessage};

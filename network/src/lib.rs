@@ -1,8 +1,8 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 mod error;
-mod receiver;
+pub mod receiver;
 mod reliable_sender;
-mod simple_sender;
+pub mod simple_sender;
 
 #[cfg(test)]
 #[path = "tests/common.rs"]

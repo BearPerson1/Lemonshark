@@ -47,7 +47,7 @@ class CommandMaker:
                 f'--store {store} --parameters {parameters} worker --id {id}')
                 
     @staticmethod
-    def run_client(address, size, rate, nodes, longest_causal_chain=1, primary_client_port=None):  # Add primary_client_port here
+    def run_client(address, size, rate, nodes, longest_causal_chain=1, primary_client_port=None): 
         assert isinstance(address, str)
         assert isinstance(size, int) and size > 0
         assert isinstance(rate, int) and rate >= 0
@@ -63,7 +63,7 @@ class CommandMaker:
             f'--rate {rate} '
             f'{nodes} '
             f'--longest_causal_chain {longest_causal_chain} '
-            f'--primary-client-port {primary_client_port}' 
+            f'--primary-client-port {primary_client_port} ' 
         ).strip()
 
     @staticmethod

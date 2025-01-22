@@ -14,6 +14,11 @@ use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
 use worker::Worker;
 
+use log::{debug, error};
+use network::SimpleSender;
+use bytes::Bytes;
+use primary::ClientMessage;
+
 /// The default channel capacity.
 pub const CHANNEL_CAPACITY: usize = 1_000;
 
@@ -93,6 +98,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
 
     // Channels the sequence of certificates.
     let (tx_output, rx_output) = channel(CHANNEL_CAPACITY);
+    
+
 
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
@@ -101,6 +108,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_new_certificates, rx_new_certificates) = channel(CHANNEL_CAPACITY);
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
+            let (tx_client_messages, mut rx_client_messages) = channel(CHANNEL_CAPACITY);
             #[cfg(not(feature = "dolphin"))]
             {
                 Tusk::spawn(
@@ -112,6 +120,32 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 );
                 let _not_used = tx_metadata;
             }
+
+            let mut client_address = match committee.primary_to_client(&keypair.name) {
+                Ok(addr) => addr,
+                Err(e) => {
+                    error!("Failed to get client address: {}", e);
+                    return Ok(());
+                }
+            };
+    
+            tokio::spawn(async move {
+                let mut client_sender = SimpleSender::new();
+                
+                while let Some(message) = rx_client_messages.recv().await {
+                    match message {
+                        ClientMessage::Header(header) => {
+                            if let Ok(bytes) = bincode::serialize(&header) {
+                                client_sender
+                                    .send(client_address, Bytes::from(bytes))
+                                    .await;
+                                debug!("Sent header to client at {}", client_address);
+                            }
+                        }
+                    }
+                }
+            });
+
             #[cfg(feature = "dolphin")]
             Dolphin::spawn(
                 committee.clone(),
@@ -124,6 +158,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 parameters.cross_shard_occurance_rate,
                 parameters.cross_shard_failure_rate,
                 parameters.causal_transactions_collision_rate,
+                tx_client_messages.clone()
             );
 
             Primary::spawn(
@@ -134,6 +169,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 /* tx_output */ tx_new_certificates,
                 rx_commit,
                 rx_metadata,
+                tx_client_messages,
             );
         }
 

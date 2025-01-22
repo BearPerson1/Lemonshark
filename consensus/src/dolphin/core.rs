@@ -12,7 +12,9 @@ use tokio::time::{sleep, Duration, Instant};
 use crypto::PublicKey;
 use std::collections::HashMap;
 
-
+use primary::messages::Header;  // We already have Header from primary
+use serde::{Serialize, Deserialize};
+use primary::ClientMessage;
 
 pub struct Dolphin {
     /// The committee information.
@@ -47,8 +49,10 @@ pub struct Dolphin {
     cross_shard_occurance_rate: f64,
     cross_shard_failure_rate: f64,
     causal_transactions_collision_rate: f64,
-
+    tx_client: Sender<ClientMessage>
 }
+
+
 
 impl Dolphin {
     #[allow(clippy::too_many_arguments)]
@@ -63,6 +67,7 @@ impl Dolphin {
         cross_shard_occurance_rate: f64,
         cross_shard_failure_rate: f64,
         causal_transactions_collision_rate: f64,
+        tx_client: Sender<ClientMessage>, 
     ) {
         tokio::spawn(async move {
             Self {
@@ -80,6 +85,7 @@ impl Dolphin {
                 cross_shard_occurance_rate,
                 cross_shard_failure_rate,
                 causal_transactions_collision_rate,
+                tx_client,
             }
             .run()
             .await;
@@ -196,6 +202,14 @@ impl Dolphin {
                     for certificate in sequence {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
+
+                        if let Err(e) = self.tx_client.send(ClientMessage::Header(certificate.header.clone())).await {
+                            warn!("Failed to send certificate to client: {}", e);
+                        } else {
+                            debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
+                                certificate.header.round, 
+                                certificate.header.shard_num);
+                        }
 
                         // Lemonshark: verytime a commit is performed, we will have to update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round

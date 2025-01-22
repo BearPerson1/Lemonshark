@@ -14,6 +14,8 @@ use tokio::time::{sleep, Duration, Instant};
 use std::collections::BTreeSet;
 use rand::Rng;
 
+use crate::primary::ClientMessage;
+
 #[cfg(test)]
 #[path = "tests/proposer_tests.rs"]
 pub mod proposer_tests;
@@ -55,6 +57,7 @@ pub struct Proposer {
     cross_shard_occurance_rate: f64,
     cross_shard_failure_rate: f64,
     causal_transactions_collision_rate: f64,
+    tx_client: Sender<ClientMessage>,
 }
 
 impl Proposer {
@@ -72,6 +75,7 @@ impl Proposer {
         cross_shard_occurance_rate: f64,
         cross_shard_failure_rate: f64,
         causal_transactions_collision_rate: f64,
+        tx_client: Sender<ClientMessage>,
         
     ) {
         let genesis = Certificate::genesis(committee)
@@ -100,7 +104,8 @@ impl Proposer {
                 cross_shard_occurance_rate,
                 cross_shard_failure_rate,
                 causal_transactions_collision_rate,
-
+                tx_client,
+                
             }
             .run()
             .await;
@@ -215,6 +220,8 @@ impl Proposer {
             // NOTE: This log entry is used to compute performance.
             info!("Created {} -> {:?}", header, digest);
         }
+        // TODO: add more logic
+        let _ = self.tx_client.send(ClientMessage::Header(header.clone())).await;
 
         // Send the new header to the `Core` that will broadcast and process it.
         self.tx_core
