@@ -7,7 +7,7 @@ use crypto::Hash as _;
 use crypto::{Digest, PublicKey, SignatureService};
 #[cfg(feature = "benchmark")]
 use log::info;
-use log::{debug, log_enabled};
+use log::{debug, log_enabled,warn};
 use std::collections::VecDeque;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
@@ -222,7 +222,19 @@ impl Proposer {
         }
         // TODO: add more logic
         // send header to client
-        //let _ = self.tx_client.send(ClientMessage::Header(header.clone())).await;
+        let msg = ClientMessage {
+            header: header.clone(),
+            message_type: 0,  // 0 for Header
+        };
+
+        if let Err(e) = self.tx_client.send(msg).await {
+            warn!("Failed to send header to client: {}", e);
+        } else {
+            debug!("Successfully sent header to client - Round: {}, Shard: {}", 
+                header.round, 
+                header.shard_num);
+        }
+
 
         // Send the new header to the `Core` that will broadcast and process it.
         self.tx_core

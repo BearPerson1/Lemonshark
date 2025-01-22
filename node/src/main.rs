@@ -108,7 +108,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_new_certificates, rx_new_certificates) = channel(CHANNEL_CAPACITY);
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
-            let (tx_client_messages, mut rx_client_messages) = channel(CHANNEL_CAPACITY);
+            let (tx_client_messages, mut rx_client_messages) = channel::<ClientMessage>(CHANNEL_CAPACITY);
             #[cfg(not(feature = "dolphin"))]
             {
                 Tusk::spawn(
@@ -133,26 +133,17 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 let mut client_sender = SimpleSender::new();
                 
                 while let Some(message) = rx_client_messages.recv().await {
-                    match message {
-                        ClientMessage::Header(header) => {
-                            if let Ok(bytes) = bincode::serialize(&header) {
-                                client_sender
-                                    .send(client_address, Bytes::from(bytes))
-                                    .await;
-                                debug!("Sent header to client at {}", client_address);
-                            }
-                        }
-                        ClientMessage::Certificate(cert) => {
-                            if let Ok(bytes) = bincode::serialize(&cert) {
-                                client_sender
-                                    .send(client_address, Bytes::from(bytes))
-                                    .await;
-                                debug!("Sent certificate to client at {}", client_address);
-                            }
-                        }
-                    }
+                    let msg = bincode::serialize(&message).unwrap_or_default();
+                    client_sender.send(client_address, Bytes::from(msg)).await;
+                    
+                    debug!("Sent message to client:");
+                    debug!("├─ Message Type: {}", if message.message_type == 0 { "Header" } else { "Certificate" });
+                    debug!("├─ Round: {}", message.header.round);
+                    debug!("├─ Author: {}", message.header.author);
+                    debug!("└─ To Address: {}", client_address);
                 }
             });
+
 
             #[cfg(feature = "dolphin")]
             Dolphin::spawn(

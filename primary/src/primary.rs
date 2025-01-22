@@ -33,12 +33,12 @@ pub const CHANNEL_CAPACITY: usize = 1_000;
 /// The round number.
 pub type Round = u64;
 // lemonshark: message sent by primary to client
-#[derive(Debug, Serialize, Deserialize)]
-pub enum ClientMessage {
-    Header(Header),
-    Certificate(Certificate),
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientMessage {
+    pub header: Header,
+    pub message_type: u64,
+    // 1 for cert, 0 for header
 }
-
 
 
 
@@ -92,14 +92,13 @@ impl Primary {
         let (tx_primary_messages, rx_primary_messages) = channel(CHANNEL_CAPACITY);
         let (tx_cert_requests, rx_cert_requests) = channel(CHANNEL_CAPACITY);
 
-        let (tx_client_messages, mut rx_client_messages) = channel(CHANNEL_CAPACITY);
         // Write the parameters to the logs.
         parameters.log();
 
         // Parse the public and secret key of this authority.
         let name = keypair.name;
         let secret = keypair.secret;
-
+        let proposer_tx_client = tx_client.clone();
 
         // Atomic variable use to synchronizer all tasks with the latest consensus round. This is only
         // used for cleanup. The only tasks that write into this variable is `GarbageCollector`.
@@ -221,7 +220,7 @@ impl Primary {
             parameters.cross_shard_occurance_rate,
             parameters.cross_shard_failure_rate,
             parameters.causal_transactions_collision_rate,
-            tx_client_messages,
+            proposer_tx_client,
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.

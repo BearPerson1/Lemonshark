@@ -205,7 +205,13 @@ impl Dolphin {
 
 
                         // lemonshark: send it to client
-                        if let Err(e) = self.tx_client.send(ClientMessage::Certificate(certificate.clone())).await {
+                        // todo: change some logic
+                        let msg = ClientMessage {
+                            header: certificate.header.clone(),
+                            message_type: 1,  // 1 for Certificate
+                        };
+
+                        if let Err(e) = self.tx_client.send(msg).await {
                             warn!("Failed to send certificate to client: {}", e);
                         } else {
                             debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 

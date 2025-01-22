@@ -29,39 +29,25 @@ struct ClientMessageHandler;
 #[async_trait]
 impl MessageHandler for ClientMessageHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
-        // Try Header first
-        match bincode::deserialize::<Header>(&message) {
-            Ok(header) => {
-                info!("Received Header Message");
-                info!("├─ Message Type: Header");
-                info!("│  ├─ Round: {}", header.round);
-                info!("│  ├─ Shard: {}", header.shard_num);
-                info!("│  ├─ Author: {}", header.author);
-                info!("│  ├─ Parent Shards: {:?}", header.parents_id_shard);
-                info!("│  └─ Payload Size: {} bytes", header.payload.len());
-                return Ok(());
+        match bincode::deserialize::<ClientMessage>(&message) {
+            Ok(msg) => {
+                info!("Received Message:");
+                info!("├─ Message Type: {}", if msg.message_type == 0 { "Header" } else { "Certificate" });
+                info!("├─ Round: {}", msg.header.round);
+                info!("├─ Shard: {}", msg.header.shard_num);
+                info!("├─ Author: {}", msg.header.author);
+                info!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
+                info!("└─ Payload Size: {} bytes", msg.header.payload.len());
+                
+                Ok(())
             }
-            Err(_) => {
-                // If Header fails, try Certificate
-                match bincode::deserialize::<Certificate>(&message) {
-                    Ok(cert) => {
-                        info!("Received Certificate Message");
-                        info!("├─ Message Type: Certificate");
-                        info!("│  ├─ Round: {}", cert.header.round);
-                        info!("│  ├─ Shard: {}", cert.header.shard_num);
-                        info!("│  ├─ Author: {}", cert.header.author);
-                        info!("│  ├─ Parent Shards: {:?}", cert.header.parents_id_shard);
-                        info!("│  └─ Votes: {}", cert.votes.len());
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        log::error!("├─ Deserialization Error");
-                        log::error!("│  └─ {}", e);
-                    }
-                }
+            Err(e) => {
+                log::error!("Deserialization error: {}", e);
+                log::error!("First 4 bytes: {:?}", &message.get(..4).unwrap_or(&[]));
+                log::error!("Message length: {}", message.len());
+                Ok(())
             }
         }
-        Ok(())
     }
 }
 
