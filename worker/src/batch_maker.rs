@@ -115,9 +115,15 @@ impl BatchMaker {
             .filter_map(|tx| {
                 tx[1..9].try_into()
                     .ok()
-                    .map(|id| (tx[0], u64::from_be_bytes(id)))
+                    .map(|bytes| (tx[0], u64::from_be_bytes(bytes)))
             })
             .collect();
+
+        // todo: delete
+        debug!("Found {} total transactions, {} special transactions", 
+        tx_ids.len(),
+        tx_ids.iter().filter(|(tx_type, _)| *tx_type == 2).count()
+        );
     
         // Get the special transaction ID if there is one
         let special_txn_id = tx_ids.iter()
@@ -174,7 +180,16 @@ impl BatchMaker {
         let (names, addresses): (Vec<_>, _) = self.workers_addresses.iter().cloned().unzip();
         let bytes = Bytes::from(serialized.clone());
         let handlers = self.network.broadcast(addresses, bytes).await;
-
+        
+        debug!("[BatchMaker] Sending batch to QuorumWaiter");
+        if let Ok(worker_message) = bincode::deserialize::<WorkerMessage>(&serialized) {
+            match worker_message {
+                WorkerMessage::Batch(_, special_txn_id) => {
+                    debug!("[BatchMaker] Batch contains special_txn_id: {:?}", special_txn_id);
+                },
+                _ => debug!("[BatchMaker] Non-batch message being sent"),
+            }
+        }
 
         
 

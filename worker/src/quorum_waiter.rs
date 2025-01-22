@@ -6,6 +6,7 @@ use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use network::CancelHandler;
 use tokio::sync::mpsc::{Receiver, Sender};
+use log::{info,debug};
 
 #[cfg(test)]
 #[path = "tests/quorum_waiter_tests.rs"]
@@ -60,6 +61,16 @@ impl QuorumWaiter {
     /// Main loop.
     async fn run(&mut self) {
         while let Some(QuorumWaiterMessage { batch, handlers }) = self.rx_message.recv().await {
+            // Add debug logging to track the message
+            if let Ok(worker_message) = bincode::deserialize::<crate::worker::WorkerMessage>(&batch) {
+                // match worker_message {
+                //     crate::worker::WorkerMessage::Batch(_, special_txn_id) => {
+                //         debug!("[QuorumWaiter] Processing batch with special_txn_id: {:?}", special_txn_id);
+                //     },
+                //     _ => debug!("[QuorumWaiter] Processing non-batch message"),
+                // }
+            }
+
             let mut wait_for_quorum: FuturesUnordered<_> = handlers
                 .into_iter()
                 .map(|(name, handler)| {
@@ -68,13 +79,12 @@ impl QuorumWaiter {
                 })
                 .collect();
 
-            // Wait for the first 2f nodes to send back an Ack. Then we consider the batch
-            // delivered and we send its digest to the primary (that will include it into
-            // the dag). This should reduce the amount of synching.
+            // Wait for the first 2f nodes to send back an Ack...
             let mut total_stake = self.stake;
             while let Some(stake) = wait_for_quorum.next().await {
                 total_stake += stake;
                 if total_stake >= self.committee.quorum_threshold() {
+                    // debug!("[QuorumWaiter] Quorum reached, forwarding batch");
                     self.tx_batch
                         .send(batch)
                         .await
@@ -84,4 +94,5 @@ impl QuorumWaiter {
             }
         }
     }
+    
 }

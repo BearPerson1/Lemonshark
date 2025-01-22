@@ -10,7 +10,7 @@ use bytes::Bytes;
 use config::{Committee, Parameters, WorkerId};
 use crypto::{Digest, PublicKey};
 use futures::sink::SinkExt as _;
-use log::{error, info, warn};
+use log::{error, info, warn, debug};
 use network::{MessageHandler, Receiver, Writer};
 use primary::PrimaryWorkerMessage;
 use serde::{Deserialize, Serialize};
@@ -275,11 +275,13 @@ impl MessageHandler for WorkerReceiverHandler {
 
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized) {
-            Ok(WorkerMessage::Batch(..)) => self
-                .tx_processor
-                .send(serialized.to_vec())
-                .await
-                .expect("Failed to send batch"),
+            Ok(WorkerMessage::Batch(batch, special_txn_id)) => {
+                debug!("Worker received batch with special_txn_id: {:?}", special_txn_id);
+                self.tx_processor
+                    .send(serialized.to_vec())
+                    .await
+                    .expect("Failed to send batch")
+            }
             Ok(WorkerMessage::BatchRequest(missing, requestor)) => self
                 .tx_helper
                 .send((missing, requestor))

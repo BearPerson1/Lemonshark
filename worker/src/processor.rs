@@ -34,6 +34,12 @@ impl Processor {
     ) {
         tokio::spawn(async move {
             while let Some(batch) = rx_batch.recv().await {
+                // Extract special transaction ID from the batch
+                let special_txn_id = match bincode::deserialize(&batch) {
+                    Ok(crate::worker::WorkerMessage::Batch(_, special_id)) => special_id,
+                    _ => None,
+                };
+
                 // Hash the batch.
                 let digest = Digest(Sha512::digest(&batch).as_slice()[..32].try_into().unwrap());
 
@@ -42,7 +48,7 @@ impl Processor {
 
                 // Deliver the batch's digest.
                 let message = match own_digest {
-                    true => WorkerPrimaryMessage::OurBatch(digest, id, None),  // Added None as the third argument
+                    true => WorkerPrimaryMessage::OurBatch(digest, id, special_txn_id),  // Use the extracted special_txn_id
                     false => WorkerPrimaryMessage::OthersBatch(digest, id),
                 };
                 let message = bincode::serialize(&message)

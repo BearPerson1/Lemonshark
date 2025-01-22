@@ -303,6 +303,16 @@ impl Proposer {
 
                 }
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
+                    // //todo: delete
+                    // debug!("=== Received Batch from Worker ===");
+                    // debug!("Worker ID: {}", worker_id);
+                    // debug!("Special Transaction ID: {:?}", special_txn_id);
+                    // debug!("Received Digest: {:?}", digest);
+                    // debug!("Current Payload Size: {} bytes", self.payload_size);
+                    // debug!("Digest Size: {} bytes", digest.size());
+                    // debug!("Current Number of Digests: {}", self.digests.len());
+                    // debug!("===================================");
+
                     self.payload_size += digest.size();
                     self.digests.push((digest, worker_id, special_txn_id));
                 }
