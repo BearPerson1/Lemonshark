@@ -47,15 +47,24 @@ class CommandMaker:
                 f'--store {store} --parameters {parameters} worker --id {id}')
                 
     @staticmethod
-    def run_client(address, size, rate, nodes, longest_causal_chain=1):  # Change here
+    def run_client(address, size, rate, nodes, longest_causal_chain=1, primary_client_port=None):  # Add primary_client_port here
         assert isinstance(address, str)
         assert isinstance(size, int) and size > 0
         assert isinstance(rate, int) and rate >= 0
         assert isinstance(nodes, list)
-        assert isinstance(longest_causal_chain, int) and longest_causal_chain >= 0  # Add validation
+        assert isinstance(longest_causal_chain, int) and longest_causal_chain >= 0  
+        assert isinstance(primary_client_port, int) and primary_client_port > 0  # This should match the parameter
         assert all(isinstance(x, str) for x in nodes)
+        
         nodes = f'--nodes {" ".join(nodes)}' if nodes else ''
-        return f'./benchmark_client {address} --size {size} --rate {rate} {nodes} --longest_causal_chain {longest_causal_chain}'
+        return (
+            f'./benchmark_client {address} '
+            f'--size {size} '
+            f'--rate {rate} '
+            f'{nodes} '
+            f'--longest_causal_chain {longest_causal_chain} '
+            f'--primary-client-port {primary_client_port}' 
+        ).strip()
 
     @staticmethod
     def kill():

@@ -69,9 +69,10 @@ class Committee:
             host = hosts.pop(0)
             primary_addr = {
                 'primary_to_primary': f'{host}:{port}',
-                'worker_to_primary': f'{host}:{port + 1}'
+                'worker_to_primary': f'{host}:{port + 1}',
+                'primary_to_client': f'{host}:{port + 2}',
             }
-            port += 2
+            port += 3
 
             workers_addr = OrderedDict()
             for j, host in enumerate(hosts):
@@ -88,6 +89,21 @@ class Committee:
                 'workers': workers_addr,
                 'primary_id': i + 1
             }
+    
+    def primary_to_client_addresses(self, faults=0):
+        ''' Returns an ordered list of primary-to-client addresses. '''
+        assert faults < self.size()
+        addresses = []
+        
+        # Use the same cached random selection as primary_addresses
+        good_nodes = self._get_good_nodes(faults)
+        
+        # Only include addresses for non-faulty nodes
+        for name, authority in self.json['authorities'].items():
+            if name in good_nodes:
+                addresses += [authority['primary']['primary_to_client']]
+    
+        return addresses
 
     def _get_good_nodes(self, faults):
         """Helper method to ensure consistent random selection between calls"""
@@ -153,6 +169,7 @@ class Committee:
             addresses = self.json['authorities'][name]['primary']
             ips.add(self.ip(addresses['primary_to_primary']))
             ips.add(self.ip(addresses['worker_to_primary']))
+            ips.add(self.ip(addresses['primary_to_client']))
 
             for worker in self.json['authorities'][name]['workers'].values():
                 ips.add(self.ip(worker['primary_to_worker']))

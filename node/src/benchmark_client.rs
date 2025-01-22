@@ -6,7 +6,7 @@ use clap::{crate_name, crate_version, App, AppSettings};
 use env_logger::Env;
 use futures::future::join_all;
 use futures::sink::SinkExt as _;
-use log::{info, warn};
+use log::{info, warn, debug};
 use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
@@ -24,6 +24,7 @@ async fn main() -> Result<()> {
         .args_from_usage("--nodes=[ADDR]... 'Network addresses that must be reachable before starting the benchmark.'")
         .args_from_usage("--longest_causal_chain=<INT> 'The longest causal chain value'")
         .setting(AppSettings::ArgRequiredElseHelp)
+        .args_from_usage("--primary-client-port=[PORT] 'Port for primary-to-client communication'")
         .get_matches();
 
     env_logger::Builder::from_env(Env::default().default_filter_or("info"))
@@ -65,13 +66,27 @@ async fn main() -> Result<()> {
     // NOTE: This log entry is used to compute performance.
     info!("Transactions rate: {} tx/s", rate);
 
+    let primary_port = matches
+    .value_of("primary-client-port")
+    .map(|p| p.parse::<u16>())
+    .transpose()
+    .context("Invalid primary client port")?;
+
+    let target_ip = target.ip();
+    
+    let primary_to_client_addr = SocketAddr::new(
+        target_ip,
+        primary_port.unwrap_or_else(|| target.port() -2 )
+    );
+
     let client = Client {
         target,
         size,
         rate,
         nodes,
         longest_causal_chain,
-
+        // Lemonshark: this is the address the client should listen too messages on
+        primary_to_client_addr,
     };
 
     // Wait for all nodes to be online and synchronized.
@@ -87,6 +102,7 @@ struct Client {
     rate: u64,
     nodes: Vec<SocketAddr>,
     longest_causal_chain: u64,
+    primary_to_client_addr: SocketAddr,
 }
 
 impl Client {

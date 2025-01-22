@@ -195,7 +195,7 @@ class Bench:
                 (x, y) for x, y in zip(names, hosts)
             )
         committee = Committee(addresses, self.settings.base_port)
-        good_nodes = committee._get_good_nodes(bench_parameters.faults)  # ADD THIS LINE
+        good_nodes = committee._get_good_nodes(bench_parameters.faults)
         committee.print(PathMaker.committee_file())
 
         node_parameters.print(PathMaker.parameters_file())
@@ -226,15 +226,19 @@ class Bench:
         # for the faulty nodes to be online).
         Print.info('Booting clients...')
         workers_addresses = committee.workers_addresses(faults)
+        primary_to_client_addresses = committee.primary_to_client_addresses(self.faults)
         rate_share = ceil(rate / committee.workers())
         for i, addresses in enumerate(workers_addresses):
+            primary_client_addr = committee.ip(primary_to_client_addresses[i])
             for (id, address) in addresses:
                 host = Committee.ip(address)
                 cmd = CommandMaker.run_client(
                     address,
                     bench_parameters.tx_size,
                     rate_share,
-                    [x for y in workers_addresses for _, x in y]
+                    [x for y in workers_addresses for _, x in y],
+                    longest_causal_chain=bench_parameters.longest_causal_chain,
+                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
                 )
                 log_file = PathMaker.client_log_file(i, id)
                 self._background_run(host, cmd, log_file)

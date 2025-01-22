@@ -80,15 +80,18 @@ class LocalBench:
 
             # Run the clients (they will wait for the nodes to be ready).
             workers_addresses = committee.workers_addresses(self.faults)
+            primary_to_client_addresses = committee.primary_to_client_addresses(self.faults)
             rate_share = ceil(rate / committee.workers())
             for i, addresses in enumerate(workers_addresses):
+                primary_client_addr = committee.ip(primary_to_client_addresses[i])
                 for (id, address) in addresses:
                     cmd = CommandMaker.run_client(
                         address,
                         self.tx_size,
                         rate_share,
                         [x for y in workers_addresses for _, x in y],
-                        longest_causal_chain = self.longest_causal_chain  # Add this parameter
+                        longest_causal_chain = self.longest_causal_chain,
+                        primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
                     )
                     log_file = PathMaker.client_log_file(i, id)
                     self._background_run(cmd, log_file)

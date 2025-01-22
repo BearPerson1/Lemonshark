@@ -132,6 +132,8 @@ pub struct PrimaryAddresses {
     pub primary_to_primary: SocketAddr,
     /// Address to receive messages from our workers (LAN).
     pub worker_to_primary: SocketAddr,
+
+    pub primary_to_client: SocketAddr,
 }
 
 #[derive(Clone, Deserialize, Eq, Hash, PartialEq)]
@@ -280,27 +282,15 @@ impl Committee {
             })
             .collect()
     }
-    // for a particular primary, get all the clients that its workers talk to.
-    pub fn get_worker_clients(&self, primary_key: &PublicKey) -> Vec<SocketAddr> {
-        // Get the authority for this primary
-        if let Some(authority) = self.authorities.get(primary_key) {
-            // Get the stake which represents number of workers
-            let num_workers = authority.stake as u32;
-            
-            // Create vector of worker IDs and get their transaction endpoints
-            (0..num_workers)
-                .filter_map(|id| {
-                    // Simply use the id directly since WorkerId is a type alias for u32
-                    match self.worker(primary_key, &id) {
-                        Ok(worker) => Some(worker.transactions),
-                        Err(_) => None
-                    }
-                })
-                .collect()
-        } else {
-            Vec::new()
-        }
+
+    // Add a new helper method to get the primary-to-client address
+    pub fn primary_to_client(&self, name: &PublicKey) -> Result<SocketAddr, ConfigError> {
+        self.authorities
+            .get(name)
+            .map(|x| x.primary.primary_to_client)
+            .ok_or_else(|| ConfigError::NotInCommittee(*name))
     }
+
   
 }
 

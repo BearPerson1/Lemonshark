@@ -162,25 +162,25 @@ impl Committer {
                 for (auth_key, (digest, cert)) in authorities {
                     // Skip if already committed
                     if !state.last_committed.get(auth_key).map_or(true, |last_round| round > last_round) {
-                        debug!("Skipping certificate - already committed");
+                        debug!("Skipping certificate [round:{} shard:{}] - already committed",cert.header.round,cert.header.shard_num);
                         continue;
                     }
                     // Skip if already early committed. 
                     if state.early_committed_certs.contains(cert) {
-                        debug!("Skipping certificate - already early-committed");
+                        debug!("Skipping certificate [round:{} shard:{}] - already early-committed",cert.header.round,cert.header.shard_num);
                         continue;
                     }
                     // skip if checked previously
                     if state.skipped_certs.contains(cert)
                     {
-                        debug!("Skipping certificate - already checked");
+                        debug!("Skipping certificate [round:{} shard:{}] - already checked",cert.header.round,cert.header.shard_num);
                         continue;
                     }
 
                     // Skip if cert is in current round
                     if cert.header.round == virtual_round
                     {
-                        debug!("Skipping certificate - In same virtual round {} vs {}",cert.header.round,virtual_round);
+                        debug!("Skipping certificate [round:{} shard:{}] - In same virtual round {} vs {}",cert.header.round,cert.header.shard_num, cert.header.round,virtual_round);
                         continue;
                     }
                     // skip if early fail (collision in shard)
@@ -209,7 +209,7 @@ impl Committer {
                         }
                         else 
                         {
-                            if(cert.header.early_fail)
+                            if cert.header.early_fail
                             {
                                 // add to skip list
                                 debug!("early fail!");

@@ -134,11 +134,7 @@ impl Primary {
         );
 
         // TODO: delete
-        let worker_endpoints = committee.get_worker_clients(&name);
-        for endpoint in worker_endpoints {
-            debug!("Worker transaction endpoint: {}", endpoint);
-        }
-
+       debug!("PRIMARY: {:?}",committee.primary_to_client(&name));
 
         // The `Synchronizer` provides auxiliary methods helping to `Core` to sync.
         let synchronizer = Synchronizer::new(
