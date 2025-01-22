@@ -79,9 +79,11 @@ class LocalBench:
             self.node_parameters.print(PathMaker.parameters_file())
 
             # Run the clients (they will wait for the nodes to be ready).
-            workers_addresses = committee.workers_addresses(self.faults)
-            primary_to_client_addresses = committee.primary_to_client_addresses(self.faults)
+            workers_addresses = committee.workers_addresses(self.faults)  # Already filtered for faults
+            primary_to_client_addresses = committee.primary_to_client_addresses(self.faults)  # Already filtered
             rate_share = ceil(rate / committee.workers())
+
+            # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
             for i, addresses in enumerate(workers_addresses):
                 primary_client_addr = committee.ip(primary_to_client_addresses[i])
                 for (id, address) in addresses:

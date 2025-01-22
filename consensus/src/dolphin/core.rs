@@ -203,7 +203,9 @@ impl Dolphin {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
-                        if let Err(e) = self.tx_client.send(ClientMessage::Header(certificate.header.clone())).await {
+
+                        // lemonshark: send it to client
+                        if let Err(e) = self.tx_client.send(ClientMessage::Certificate(certificate.clone())).await {
                             warn!("Failed to send certificate to client: {}", e);
                         } else {
                             debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 

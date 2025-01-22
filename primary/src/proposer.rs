@@ -221,7 +221,8 @@ impl Proposer {
             info!("Created {} -> {:?}", header, digest);
         }
         // TODO: add more logic
-        let _ = self.tx_client.send(ClientMessage::Header(header.clone())).await;
+        // send header to client
+        //let _ = self.tx_client.send(ClientMessage::Header(header.clone())).await;
 
         // Send the new header to the `Core` that will broadcast and process it.
         self.tx_core

@@ -36,6 +36,7 @@ pub type Round = u64;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ClientMessage {
     Header(Header),
+    Certificate(Certificate),
 }
 
 

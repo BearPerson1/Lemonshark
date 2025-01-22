@@ -142,6 +142,14 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                                 debug!("Sent header to client at {}", client_address);
                             }
                         }
+                        ClientMessage::Certificate(cert) => {
+                            if let Ok(bytes) = bincode::serialize(&cert) {
+                                client_sender
+                                    .send(client_address, Bytes::from(bytes))
+                                    .await;
+                                debug!("Sent certificate to client at {}", client_address);
+                            }
+                        }
                     }
                 }
             });

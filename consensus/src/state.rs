@@ -95,7 +95,7 @@ impl State {
                  for (auth_key, (digest, cert)) in sorted_auth {
                     let name = mapping.get(auth_key);
                     debug!("├─ Primary: {}", name.unwrap());
-                    //ebug!("│  ├─ Digest: {:?}", digest);
+                    //debug!("│  ├─ Digest: {:?}", digest);
                     debug!("│  ├─ Certificate Round: {}", cert.round());
                     debug!("│  ├─ Shard: {}", cert.header.shard_num);
                     if (cert.header.cross_shard!=0)
