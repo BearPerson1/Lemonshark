@@ -34,8 +34,8 @@ class LogParser:
                 results = p.map(self._parse_clients, clients)
         except (ValueError, IndexError, AttributeError) as e:
             raise ParseError(f'Failed to parse clients\' logs: {e}')
-        self.size, self.rate, self.start, misses, self.sent_samples \
-            = zip(*results)
+        self.size, self.rate, self.start, misses, self.sent_samples, \
+            self.cc_start, self.cc_end = zip(*results)
         self.misses = sum(misses)
 
         # Parse the primaries logs.
@@ -92,7 +92,15 @@ class LogParser:
         tmp = findall(r'\[(.*Z) .* sample transaction (\d+)', log)
         samples = {int(s): self._to_posix(t) for t, s in tmp}
 
-        return size, rate, start, misses, samples
+        # lemonshark: causal transactions:
+
+        cc_start_tmp = findall(r'\[(.*Z) .* Sending causal-transaction (\d+)', log)
+        cc_start = {int(s): self._to_posix(t) for t, s in cc_start_tmp}
+
+        cc_end_tmp = findall(r'\[(.*Z) .* Finalizing causal-transaction (\d+)', log)
+        cc_end = {int(s): self._to_posix(t) for t, s in cc_end_tmp}
+
+        return size, rate, start, misses, samples, cc_start, cc_end
 
     def _parse_primaries(self, log):
         if search(r'(?:panicked|Error)', log) is not None:
@@ -111,6 +119,7 @@ class LogParser:
         tmp = findall(r'\[(.*Z) .* Early-Committed B\d+\([^ ]+\) -> ([^ ]+=)', log)
         tmp = [(d, self._to_posix(t)) for t, d in tmp]
         early_commits = self._merge_results([tmp])
+        
 
         configs = {
             'header_size': int(
@@ -233,6 +242,35 @@ class LogParser:
         
         return mean(latency) if latency else 0
 
+    ## Lemonshark
+    def get_causal_transaction_duration(self):
+        per_tx_times = []
+        has_incomplete = False
+        
+        # Loop through all clients
+        for client_index in range(len(self.cc_start)):
+            # First check for incomplete transactions
+            for tx_id in self.cc_start[client_index].keys():
+                if tx_id not in self.cc_end[client_index]:
+                    has_incomplete = True
+                    break  # We found at least one incomplete, no need to check more
+            
+            # Calculate average time per transaction for this client
+            if self.cc_start[client_index] and self.cc_end[client_index]:
+                # Get the earliest start time
+                earliest_start = min(self.cc_start[client_index].values())
+                
+                # Get the latest end time and its transaction number
+                latest_end = max(self.cc_end[client_index].values())
+                last_tx_num = max(self.cc_end[client_index].keys())
+                
+                # Calculate time per transaction
+                total_time = latest_end - earliest_start
+                time_per_tx = total_time / last_tx_num
+                per_tx_times.append(time_per_tx)
+        
+        # Return the average time per transaction across all clients and incomplete status
+        return mean(per_tx_times) if per_tx_times else 0, has_incomplete
 
 
     def result(self):
@@ -251,6 +289,10 @@ class LogParser:
 
         early_consensus_latency = self._early_consensus_latency() * 1_000
         early_end_to_end_latency = self._early_end_to_end_latency() * 1_000
+
+        # Get causal transaction metrics
+        causal_duration, has_incomplete = self.get_causal_transaction_duration()
+        causal_duration_ms = causal_duration * 1_000  # Convert to milliseconds
 
         return (
             '\n'
@@ -285,6 +327,10 @@ class LogParser:
             '\n'
             f' EARLY Consensus latency: {round(early_consensus_latency):,} ms\n'
             f' EARLY End-to-end latency: {round(early_end_to_end_latency):,} ms\n'
+            '\n'
+            ' + CAUSAL TRANSACTION METRICS:\n'
+            f' Average causal transaction duration: {round(causal_duration_ms):,} ms\n'
+            f' Has incomplete transactions: {has_incomplete}\n'
             '-----------------------------------------\n'
         )
 

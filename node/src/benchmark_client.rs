@@ -261,7 +261,6 @@ impl MessageHandler for ClientMessageHandler {
                     if let Err(e) = self.tx_chain.send(send_next_check.clone()).await {
                         warn!("Failed to request new causal chain transaction: {}", e);
                     }
-                    info!("Sending causal-transaction {}", send_next_check.counter);
                 }
                 Ok(())
             }
@@ -438,7 +437,8 @@ impl Client {
                         warn!("Failed to send causal chain transaction: {}", e);
                         break 'main;
                     }
-                    debug!("Sent causal chain transaction {}", chain_message.counter);
+                    info!("Sending causal-transaction {}" , chain_message.counter);
+
                     continue;
                 }
             }
