@@ -51,10 +51,16 @@ pub struct Header {
     pub metadata: Option<Metadata>,
     pub id: Digest,
     pub signature: Signature,
+
+    // lemonshark
     pub shard_num: u64,
     pub parents_id_shard: BTreeSet<(u64, u64)>,
     pub cross_shard: u64,
     pub early_fail: bool,
+    pub casual_transaction: bool, 
+    pub causal_transaction_id: u64,
+    pub collision_fail: bool,
+    
 
 }
 
@@ -70,6 +76,9 @@ impl Header {
         parents_id_shard: BTreeSet<(u64, u64)>,
         cross_shard: u64,
         early_fail: bool,
+        casual_transaction: bool, 
+        causal_transaction_id: u64,
+        collision_fail: bool,
     ) -> Self {
         let header = Self {
             author,
@@ -83,6 +92,9 @@ impl Header {
             parents_id_shard, 
             cross_shard,
             early_fail,
+            casual_transaction, 
+            causal_transaction_id,
+            collision_fail,
         };
         let id = header.digest();
         let signature = signature_service.request_signature(id.clone()).await;

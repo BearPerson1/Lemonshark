@@ -33,7 +33,7 @@ def local(ctx, debug=True):
         'max_batch_delay': 200,  # ms
         'cross_shard_occurance_rate': 0.0,
         'cross_shard_failure_rate': 0.3,
-        'causal_transactions_collision_rate':0.1
+        'causal_transactions_collision_rate':0.5
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)

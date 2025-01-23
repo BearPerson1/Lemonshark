@@ -19,7 +19,7 @@ use network::receiver::{Receiver, MessageHandler, Writer};
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::error::Error;
-use primary::ClientMessage; // Add this import
+use primary::ClientMessage;
 use primary::messages::{Header, Certificate};
 
 #[derive(Clone)]
@@ -38,7 +38,7 @@ impl ClientMessageHandler {
     fn new(tx_chain: tokio::sync::mpsc::Sender<ChainMessage>) -> Self {
         Self {
             tx_chain,
-            last_causal_chain_counter: Arc::new(Mutex::new(0)),
+            last_causal_chain_counter: Arc::new(Mutex::new(1)),
         }
     }
 
@@ -69,13 +69,13 @@ impl MessageHandler for ClientMessageHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
         match bincode::deserialize::<ClientMessage>(&message) {
             Ok(msg) => {
-                info!("Received Message:");
-                info!("├─ Message Type: {}", if msg.message_type == 0 { "Header" } else { "Certificate" });
-                info!("├─ Round: {}", msg.header.round);
-                info!("├─ Shard: {}", msg.header.shard_num);
-                info!("├─ Author: {}", msg.header.author);
-                info!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
-                info!("└─ Payload Size: {} bytes", msg.header.payload.len());
+                debug!("Received Message:");
+                debug!("├─ Message Type: {}", if msg.message_type == 0 { "Header" } else { "Certificate" });
+                debug!("├─ Round: {}", msg.header.round);
+                debug!("├─ Shard: {}", msg.header.shard_num);
+                debug!("├─ Author: {}", msg.header.author);
+                debug!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
+                debug!("└─ Payload Size: {} bytes", msg.header.payload.len());
                 
                 // lemonshark:
                 let send_next_check = self.process_primary_message(&msg).await?;
@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
         .args_from_usage("--primary-client-port=[PORT] 'Port for primary-to-client communication'")
         .get_matches();
 
-    env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug"))
         .format_timestamp_millis()
         .init();
 
@@ -207,7 +207,7 @@ impl Client {
             ));
         }
         // Lemonshark
-        info!("longest_causal_chain: {}",self.longest_causal_chain);   
+        debug!("longest_causal_chain: {}",self.longest_causal_chain);   
 
         // Connect to the mempool.
         let stream = TcpStream::connect(self.target)
@@ -228,15 +228,15 @@ impl Client {
         if self.longest_causal_chain != 0 {
             tx.clear();
             tx.put_u8(2u8); // Special transaction type
-            tx.put_u64(0);
+            tx.put_u64(1);
             tx.resize(self.size, 0u8);
             let bytes = tx.split().freeze();
             transport.send(bytes).await?;
-            info!("Sent initial causal chain transaction");
+            debug!("Sent initial causal chain transaction");
         }
 
         // NOTE: This log entry is used to compute performance.
-        info!("Start sending transactions");
+        debug!("Start sending transactions");
 
         'main: loop {
             // Lemonshark: Check for message from handler about sending new causal chain transaction
@@ -252,7 +252,7 @@ impl Client {
                         warn!("Failed to send causal chain transaction: {}", e);
                         break 'main;
                     }
-                    info!("Sent causal chain transaction {}", chain_message.counter);
+                    debug!("Sent causal chain transaction {}", chain_message.counter);
                     continue;
                 }
             }

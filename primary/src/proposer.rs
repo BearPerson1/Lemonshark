@@ -155,34 +155,52 @@ impl Proposer {
         }
     }
 
+    // flip coin to see if collision happens. 
+    fn determine_causal_collision(&self) -> bool {
+        rand::thread_rng().gen_bool(self.causal_transactions_collision_rate)
+    }
     
     async fn make_header(&mut self) {
         // Make a new header.
         
+
+        
         
         let shard_num = self.determine_shard_num(self.committee.get_primary_id(&self.name), self.round, self.committee.size() as u64);
+        let mut causal_transaction:bool = false;
+        let mut causal_transaction_id:u64 = 0;
+        let mut collision_fail:bool = false;
+
+
         
 
-        // lemonshark
+        // lemonshark: Check if this is batch contains a casual transaction
         let special_txn_ids: Vec<u64> = self.digests.iter()
         .filter_map(|(_digest, _worker_id, special_id)| *special_id)
         .collect();
-
         // Add more detailed debugging
         if !special_txn_ids.is_empty() {
+            //todo: delete
             debug!(
                 "Header for round {} contains {} special transaction(s): {:?}", 
                 self.round,
                 special_txn_ids.len(),
                 special_txn_ids
             );
+
+            causal_transaction = true;
+            if let Some(&first_id) = special_txn_ids.first() {
+                causal_transaction_id = first_id;
+            }
+            collision_fail = self.determine_causal_collision();
         }
         //=============================
 
-        debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
+        
+
+        // lemonshark: Shard management
         let mut parents_id_shard = BTreeSet::new();
         let (cross_shard,early_fail) : (u64,bool) = self.determine_cross_shard(shard_num);
-
 
         for parent_cert in &self.last_parent_certificates 
         { 
@@ -202,6 +220,17 @@ impl Proposer {
         {
             debug!("Cross-shard going to shard {}, early fail->{}",cross_shard,early_fail);
         }
+        //=============================
+
+
+        // todo: delete
+        // some debug statements
+        debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
+       
+        if causal_transaction
+        {
+            debug!("Header has causal transaction: [causal_txn_id: {}, fail?: {}]",causal_transaction_id,collision_fail);
+        }
 
 
 
@@ -216,6 +245,9 @@ impl Proposer {
             parents_id_shard, 
             cross_shard,
             early_fail,
+            causal_transaction,
+            causal_transaction_id,
+            collision_fail,
         )
         .await;
         debug!("Created header {:?}", header);
@@ -237,20 +269,30 @@ impl Proposer {
             // NOTE: This log entry is used to compute performance.
             info!("Created {} -> {:?}", header, digest);
         }
-        // TODO: add more logic
-        // send header to client
-        let msg = ClientMessage {
-            header: header.clone(),
-            message_type: 0,  // 0 for Header
-        };
 
-        if let Err(e) = self.tx_client.send(msg).await {
-            warn!("Failed to send header to client: {}", e);
-        } else {
-            debug!("Successfully sent header to client - Round: {}, Shard: {}", 
-                header.round, 
-                header.shard_num);
+
+
+        // Lemonshark: If this includes a causal transaction, we send our "spec" to the client
+        if causal_transaction
+        {
+            let msg = ClientMessage {
+                header: header.clone(),
+                message_type: 0,  // 0 for Header
+            };
+            
+            if let Err(e) = self.tx_client.send(msg).await {
+                warn!("Failed to send header to client: {}", e);
+            } else {
+                debug!("Successfully sent header to client - Round: {}, Shard: {}", 
+                    header.round, 
+                    header.shard_num);
+            }
         }
+        
+
+
+
+        
         //===================
 
         // Send the new header to the `Core` that will broadcast and process it.
