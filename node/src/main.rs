@@ -129,6 +129,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 }
             };
     
+            // lemonshark
             tokio::spawn(async move {
                 let mut client_sender = SimpleSender::new();
                 
@@ -157,7 +158,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 parameters.cross_shard_occurance_rate,
                 parameters.cross_shard_failure_rate,
                 parameters.causal_transactions_collision_rate,
-                tx_client_messages.clone()
+                tx_client_messages.clone(),
+                keypair.name,
             );
 
             Primary::spawn(

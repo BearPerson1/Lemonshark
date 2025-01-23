@@ -49,7 +49,9 @@ pub struct Dolphin {
     cross_shard_occurance_rate: f64,
     cross_shard_failure_rate: f64,
     causal_transactions_collision_rate: f64,
-    tx_client: Sender<ClientMessage>
+    tx_client: Sender<ClientMessage>,
+    name: PublicKey
+
 }
 
 
@@ -68,6 +70,7 @@ impl Dolphin {
         cross_shard_failure_rate: f64,
         causal_transactions_collision_rate: f64,
         tx_client: Sender<ClientMessage>, 
+        name: PublicKey,
     ) {
         tokio::spawn(async move {
             Self {
@@ -86,6 +89,7 @@ impl Dolphin {
                 cross_shard_failure_rate,
                 causal_transactions_collision_rate,
                 tx_client,
+                name,
             }
             .run()
             .await;
@@ -206,18 +210,22 @@ impl Dolphin {
 
                         // lemonshark: send it to client
                         // todo: change some logic
-                        let msg = ClientMessage {
-                            header: certificate.header.clone(),
-                            message_type: 1,  // 1 for Certificate
-                        };
-
-                        if let Err(e) = self.tx_client.send(msg).await {
-                            warn!("Failed to send certificate to client: {}", e);
-                        } else {
-                            debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
-                                certificate.header.round, 
-                                certificate.header.shard_num);
+                        if certificate.header.casual_transaction && certificate.header.author == self.name
+                        {
+                            let msg = ClientMessage {
+                                header: certificate.header.clone(),
+                                message_type: 1,  // 1 for Certificate
+                            };
+    
+                            if let Err(e) = self.tx_client.send(msg).await {
+                                warn!("Failed to send certificate to client: {}", e);
+                            } else {
+                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
+                                    certificate.header.round, 
+                                    certificate.header.shard_num);
+                            }
                         }
+                        // =================================
 
                         // Lemonshark: verytime a commit is performed, we will have to update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round
@@ -291,6 +299,25 @@ impl Dolphin {
                                         info!("Early-Committed {} -> {:?}", certificate.header, digest);
                                     }
                                 }
+
+                                // lemonshark: send it to client
+                                // todo: change some logic
+                                if certificate.header.casual_transaction && certificate.header.author == self.name
+                                {
+                                    let msg = ClientMessage {
+                                        header: certificate.header.clone(),
+                                        message_type: 1,  // 1 for Certificate
+                                    };
+            
+                                    if let Err(e) = self.tx_client.send(msg).await {
+                                        warn!("Failed to send certificate to client: {}", e);
+                                    } else {
+                                        debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
+                                            certificate.header.round, 
+                                            certificate.header.shard_num);
+                                    }
+                                }
+                                // =================================
                             }
                         }
                     }
