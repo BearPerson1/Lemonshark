@@ -31,9 +31,9 @@ def local(ctx, debug=True):
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'cross_shard_occurance_rate': 0.0,
-        'cross_shard_failure_rate': 0.3,
-        'causal_transactions_collision_rate':0.5
+        'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
+        'cross_shard_failure_rate': 0.3, 
+        'causal_transactions_collision_rate':0.5 # how often we have collisions when doing causally dependant transactions
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)
