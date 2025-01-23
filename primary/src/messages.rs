@@ -1,4 +1,3 @@
-// Copyright(C) Facebook, Inc. and its affiliates.
 use crate::error::{DagError, DagResult};
 use crate::primary::Round;
 use config::{Committee, WorkerId};
@@ -9,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+
 
 // TODO: Make metadata generic.
 
@@ -63,6 +63,7 @@ pub struct Header {
     
 
 }
+
 
 impl Header {
     pub async fn new(
@@ -147,6 +148,27 @@ impl Hash for Header {
         Digest(hasher.finalize().as_slice()[..32].try_into().unwrap())
     }
 }
+
+// for lemonshark
+impl std::hash::Hash for Header {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.round.hash(state);
+        self.causal_transaction_id.hash(state);
+        self.shard_num.hash(state);
+        self.collision_fail.hash(state);
+    }
+}
+impl PartialEq for Header {
+    fn eq(&self, other: &Self) -> bool {
+        self.round == other.round &&
+        self.causal_transaction_id == other.causal_transaction_id &&
+        self.shard_num == other.shard_num &&
+        self.collision_fail == other.collision_fail
+    }
+}
+
+impl Eq for Header {}
+
 
 impl fmt::Debug for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {

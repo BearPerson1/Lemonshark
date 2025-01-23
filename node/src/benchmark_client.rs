@@ -8,6 +8,7 @@ use futures::future::join_all;
 use futures::sink::SinkExt as _;
 use log::{info, warn, debug};
 use rand::Rng;
+use tokio::time::error::Elapsed;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
@@ -21,11 +22,18 @@ use bytes::Bytes;
 use std::error::Error;
 use primary::ClientMessage;
 use primary::messages::{Header, Certificate};
+use std::collections::{HashMap,HashSet};
 
 #[derive(Clone)]
 struct ClientMessageHandler {
     tx_chain: tokio::sync::mpsc::Sender<ChainMessage>,
     last_causal_chain_counter: Arc<Mutex<u64>>,
+    confirmed_depth: Arc<Mutex<u64>>,
+    buffer_spec_headers: Arc<Mutex<HashMap<u64,Header>>>, 
+    buffer_certs: Arc<Mutex<HashMap<u64,Header>>>, 
+    purged_headers:Arc<Mutex<HashSet<Header>>>, 
+    longest_causal_chain: u64,
+
 }
 
 #[derive(Clone)]
@@ -35,31 +43,197 @@ struct ChainMessage {
 }
 
 impl ClientMessageHandler {
-    fn new(tx_chain: tokio::sync::mpsc::Sender<ChainMessage>) -> Self {
+    fn new(
+        tx_chain: tokio::sync::mpsc::Sender<ChainMessage>,
+        confirmed_depth: u64,
+        longest_causal_chain: u64,
+        ) -> Self {
         Self {
             tx_chain,
             last_causal_chain_counter: Arc::new(Mutex::new(1)),
+            confirmed_depth: Arc::new(Mutex::new(confirmed_depth)),
+            // results waiting to be confirmed
+            buffer_spec_headers: Arc::new(Mutex::new(HashMap::new())), 
+            buffer_certs: Arc::new(Mutex::new(HashMap::new())),
+            purged_headers:  Arc::new(Mutex::new(HashSet::new())),
+            longest_causal_chain,
         }
     }
-
+// todo: remove debugs
     async fn process_primary_message(&self, msg: &ClientMessage) -> Result<ChainMessage, Box<dyn Error>> {
-        let counter = {
-            let mut counter = self.last_causal_chain_counter.lock().unwrap();
-            *counter += 1;
-            *counter
-        };
-        
-        // Set should_send based on counter value
-        let should_send = if counter > 2 {
-            false
-        } else {
-            true
-        };
-    
-        Ok(ChainMessage {
-            should_send,
-            counter,
-        })
+        match msg.message_type {
+            0 => {
+                // Header
+                debug!("Processing Header message from round {}", msg.header.round);
+                let mut purged = self.purged_headers.lock().unwrap();
+                let mut confirmed = self.confirmed_depth.lock().unwrap();
+                let mut counter = self.last_causal_chain_counter.lock().unwrap();
+                let mut headers = self.buffer_spec_headers.lock().unwrap();
+                let mut certs = self.buffer_certs.lock().unwrap();
+                let mut should_send = true;
+
+                if msg.header.causal_transaction_id == *counter
+                {
+                    *counter = *counter + 1;
+                    headers.insert(msg.header.causal_transaction_id,msg.header.clone());
+                }
+                if *counter > self.longest_causal_chain
+                {
+                    should_send = false;
+                }
+                debug!("Final state - Confirmed depth: {}, Headers buffered: {}, Certificates buffered: {}, Purged: {}", 
+                 *confirmed, headers.len(), certs.len(), purged.len());
+
+                Ok(ChainMessage {
+                    should_send,
+                    counter:*counter,
+                })
+            },
+            1 => {
+                // Certificate
+                debug!("Processing Certificate message from round {}", msg.header.round);
+
+                let mut purged = self.purged_headers.lock().unwrap();
+                let mut confirmed = self.confirmed_depth.lock().unwrap();
+                let mut counter = self.last_causal_chain_counter.lock().unwrap();
+                let mut headers = self.buffer_spec_headers.lock().unwrap();
+                let mut certs = self.buffer_certs.lock().unwrap();
+                let mut restart = false;
+                let mut should_send = false;
+
+                // Should be:
+                if purged.iter().any(|h| {
+                    h.round == msg.header.round && 
+                    h.causal_transaction_id == msg.header.causal_transaction_id &&
+                    h.shard_num == msg.header.shard_num
+                }) {
+                    debug!("Certificate header was previously purged, ignoring");
+                    return Ok(ChainMessage {
+                        should_send: false,
+                        counter: *counter,
+                    });
+                }
+
+                // Check if this certificate corresponds to a header we're waiting for
+                if headers.contains_key(&msg.header.causal_transaction_id) {
+                    // Check if this is the smallest transaction ID in headers
+                    if let Some(min_id) = headers.keys().min() {
+                        debug!("Current minimum transaction ID in headers: {}", min_id);
+                        if msg.header.causal_transaction_id == *min_id {
+                            debug!("Processing minimum transaction ID certificate");
+                            if !msg.header.collision_fail {
+                                debug!("No collision detected, incrementing confirmed depth to {}", *confirmed + 1);
+
+                                *confirmed += 1;
+
+                                //NOTE: for performance check
+                                info!("Finalizing causal-transaction {}",confirmed);
+                                
+                                // Remove the processed header and add to purged
+                                if let Some(header) = headers.remove(&msg.header.causal_transaction_id) {
+                                    purged.insert(header.clone());
+                                }
+                                debug!("Removed header for transaction ID {}", msg.header.causal_transaction_id);
+                                
+                                // Recursively process any buffered certificates
+                                let mut next_id = msg.header.causal_transaction_id + 1;
+                                debug!("Checking for chained certificates starting from ID {}", next_id);
+                                while let Some(next_cert) = certs.remove(&next_id) {
+                                    debug!("Found buffered certificate for ID {}", next_id);
+                                    if headers.contains_key(&next_id) {
+                                        if !next_cert.collision_fail {
+                                            debug!("Processing chained certificate {}, incrementing confirmed depth", next_id);
+
+                                            *confirmed += 1;
+                                            //NOTE: for performance check
+                                            info!("Finalizing causal-transaction {}",confirmed);
+
+                                            if let Some(header) = headers.remove(&next_id) {
+                                                purged.insert(header.clone());
+                                            }
+                                            next_id += 1;
+                                        } else {
+                                            // Collision failed, purge buffers
+                                            debug!("Collision detected in chained certificate {}, purging buffers", next_id);
+
+                                            *confirmed+=1;
+
+                                            //NOTE: for performance check
+                                            info!("Finalizing causal-transaction {}",confirmed);
+                                            for header in headers.values() {
+                                                purged.insert(header.clone());
+                                            }
+                                            headers.clear();
+                                            certs.clear();
+                                            restart = true;
+                                            break;
+                                        }
+                                    } else {
+                                        debug!("No matching header found for certificate {}, stopping chain processing", next_id);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                // Collision failed, purge buffers
+                                debug!("Collision detected in minimum ID certificate, purging buffers");
+                                
+                                *confirmed += 1;
+
+                                //NOTE: for performance check
+                                info!("Finalizing causal-transaction {}",confirmed);
+                                for header in headers.values() {
+                                    purged.insert(header.clone());
+                                }
+                                headers.clear();
+                                certs.clear();
+                                restart = true;
+                            }
+                        } else {
+                            // Not the smallest ID, buffer the certificate
+                            debug!("Certificate {} is not the minimum ({}), buffering for later",msg.header.causal_transaction_id, min_id);
+                            certs.insert(msg.header.causal_transaction_id, msg.header.clone());
+                            should_send = false;
+                        }
+                    }
+                } else {
+                    // Certificate doesn't correspond to any header we're tracking
+                    debug!("No matching header found for certificate {}, ignoring", msg.header.causal_transaction_id);
+                    should_send = false;
+                }
+
+                if restart
+                {
+                    if *confirmed == self.longest_causal_chain
+                    {
+                        should_send = false;
+                    }
+                    else 
+                    {
+                        *counter = *confirmed + 1;
+                        should_send = true;
+                    }
+
+                }
+                
+                debug!("Final state - Confirmed depth: {}, Headers buffered: {}, Certificates buffered: {}, Purged: {}", 
+                *confirmed, headers.len(), certs.len(), purged.len());
+
+
+                debug!("counter: {}, confirmed: {}", counter, confirmed);
+
+                Ok(ChainMessage {
+                    should_send,
+                    counter: *counter,
+                })
+            },
+            _ => { // should never happen
+                warn!("Unknown message type: {}", msg.message_type);
+                Ok(ChainMessage {
+                    should_send: false,
+                    counter: 0,
+                })
+            }
+        }
     }
 
     
@@ -72,17 +246,22 @@ impl MessageHandler for ClientMessageHandler {
                 debug!("Received Message:");
                 debug!("├─ Message Type: {}", if msg.message_type == 0 { "Header" } else { "Certificate" });
                 debug!("├─ Round: {}", msg.header.round);
+                debug!("├─ Collision fail? {} ",msg.header.collision_fail);
+                debug!("├─ Causal txn id: {}",msg.header.causal_transaction_id);
                 debug!("├─ Shard: {}", msg.header.shard_num);
-                debug!("├─ Author: {}", msg.header.author);
-                debug!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
-                debug!("└─ Payload Size: {} bytes", msg.header.payload.len());
+                //debug!("├─ Author: {}", msg.header.author);
+                //debug!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
+                //debug!("└─ Payload Size: {} bytes", msg.header.payload.len());
+
+    
                 
                 // lemonshark:
                 let send_next_check = self.process_primary_message(&msg).await?;
                 if send_next_check.should_send {
-                    if let Err(e) = self.tx_chain.send(send_next_check).await {
+                    if let Err(e) = self.tx_chain.send(send_next_check.clone()).await {
                         warn!("Failed to request new causal chain transaction: {}", e);
                     }
+                    info!("Sending causal-transaction {}", send_next_check.counter);
                 }
                 Ok(())
             }
@@ -196,7 +375,11 @@ impl Client {
 
         // Create channel for receiving signals from the message handler
         let (tx_chain, mut rx_chain) = tokio::sync::mpsc::channel::<ChainMessage>(100);
-        let handler = ClientMessageHandler::new(tx_chain);
+        let handler = ClientMessageHandler::new(
+            tx_chain,
+            0, //confirmed depth
+            self.longest_causal_chain,
+            );
         Receiver::spawn(self.primary_to_client_addr, handler);
 
 
@@ -207,7 +390,7 @@ impl Client {
             ));
         }
         // Lemonshark
-        debug!("longest_causal_chain: {}",self.longest_causal_chain);   
+        info!("longest_causal_chain: {}",self.longest_causal_chain);   
 
         // Connect to the mempool.
         let stream = TcpStream::connect(self.target)
@@ -233,6 +416,9 @@ impl Client {
             let bytes = tx.split().freeze();
             transport.send(bytes).await?;
             debug!("Sent initial causal chain transaction");
+
+            // NOTE: This log entry is used to compute performance.
+            info!("Sending causal-transaction {}", 1);
         }
 
         // NOTE: This log entry is used to compute performance.

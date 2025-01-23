@@ -13,7 +13,6 @@ use crypto::PublicKey;
 use std::collections::HashMap;
 
 use primary::messages::Header;  // We already have Header from primary
-use serde::{Serialize, Deserialize};
 use primary::ClientMessage;
 
 pub struct Dolphin {
