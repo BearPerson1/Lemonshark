@@ -325,11 +325,11 @@ class LogParser:
             f' End-to-end BPS: {round(end_to_end_bps):,} B/s\n'
             f' End-to-end latency: {round(end_to_end_latency):,} ms\n'
             '\n'
+            ' + LEMONSHARK METRICS:\n'
             f' EARLY Consensus latency: {round(early_consensus_latency):,} ms\n'
             f' EARLY End-to-end latency: {round(early_end_to_end_latency):,} ms\n'
             '\n'
-            ' + CAUSAL TRANSACTION METRICS:\n'
-            f' Average causal transaction duration: {round(causal_duration_ms):,} ms\n'
+            f' Average causal transaction latency: {round(causal_duration_ms):,} ms\n'
             f' Has incomplete transactions: {has_incomplete}\n'
             '-----------------------------------------\n'
         )
