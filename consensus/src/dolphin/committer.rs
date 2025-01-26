@@ -7,6 +7,8 @@ use primary::{Certificate, Round};
 use std::collections::{HashMap,HashSet};
 use crypto::PublicKey;
 
+
+#[derive(Clone)]
 pub struct Committer {
     /// The committee information.
     committee: Committee,

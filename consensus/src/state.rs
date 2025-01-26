@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 pub type Dag = HashMap<Round, HashMap<PublicKey, (Digest, Certificate)>>;
 
 /// The state that needs to be persisted for crash-recovery.
+#[derive(Clone)]
 pub struct State {
     /// The garbage collection depth.
     gc_depth: Round,

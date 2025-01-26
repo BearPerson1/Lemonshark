@@ -280,46 +280,52 @@ impl Dolphin {
                     //     }
                     // }
 
-                    // Parallelize it slightly
-                    tokio::select! {
-                        early_commit_result = async {
-                            self.committer.try_early_commit(
-                                &mut state, 
-                                &mut self.shard_last_committed_round, 
-                                virtual_round as u64)
-                        } => {
-                            // Process the results
-                            for certificate in early_commit_result {
-                                state.add_early_committed_certs(certificate.clone());
-                                
-                                #[cfg(feature = "benchmark")]
-                                {
-                                    for digest in certificate.header.payload.keys() {
-                                        info!("Early-Committed {} -> {:?}", certificate.header, digest);
-                                    }
-                                }
 
-                                // lemonshark: send it to client
-                                // todo: change some logic
-                                if certificate.header.casual_transaction && certificate.header.author == self.name
-                                {
-                                    let msg = ClientMessage {
-                                        header: certificate.header.clone(),
-                                        message_type: 1,  // 1 for Certificate
-                                    };
-            
-                                    if let Err(e) = self.tx_client.send(msg).await {
-                                        warn!("Failed to send certificate to client: {}", e);
-                                    } else {
-                                        debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
-                                            certificate.header.round, 
-                                            certificate.header.shard_num);
-                                    }
+                    let mut state_clone = state.clone();  
+                    let mut shard_last_committed_round_clone = self.shard_last_committed_round.clone();
+                    let tx_client_clone = self.tx_client.clone();
+                    let name = self.name;  
+                    let mut committer_clone = self.committer.clone();  
+                    // Parallelize it slightly
+
+
+                    tokio::spawn(async move {
+                        let early_commit_result = committer_clone.try_early_commit(
+                            &mut state_clone,
+                            &mut shard_last_committed_round_clone,
+                            virtual_round as u64
+                        );
+                    
+                        // Rest of the spawned task remains the same
+                        for certificate in early_commit_result {
+                            state_clone.add_early_committed_certs(certificate.clone());
+                            
+                            #[cfg(feature = "benchmark")]
+                            {
+                                for digest in certificate.header.payload.keys() {
+                                    info!("Early-Committed {} -> {:?}", certificate.header, digest);
                                 }
-                                // =================================
+                            }
+                    
+                            // Send to client if needed
+                            if certificate.header.casual_transaction && certificate.header.author == name {
+                                let msg = ClientMessage {
+                                    header: certificate.header.clone(),
+                                    message_type: 1,
+                                };
+                    
+                                if let Err(e) = tx_client_clone.send(msg).await {
+                                    warn!("Failed to send certificate to client: {}", e);
+                                } else {
+                                    debug!(
+                                        "Successfully sent committed certificate to client - Round: {}, Shard: {}", 
+                                        certificate.header.round, 
+                                        certificate.header.shard_num
+                                    );
+                                }
                             }
                         }
-                    }
+                    });
 
 //======================================================================
 
