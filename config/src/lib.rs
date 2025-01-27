@@ -85,6 +85,7 @@ pub struct Parameters {
     pub cross_shard_occurance_rate: f64,
     pub cross_shard_failure_rate: f64,
     pub causal_transactions_collision_rate: f64,
+    pub causal_transactions_respect_early_finality: bool, 
 }
 
 impl Default for Parameters {
@@ -102,6 +103,7 @@ impl Default for Parameters {
             cross_shard_failure_rate : 0.0,
             cross_shard_occurance_rate : 0.0,
             causal_transactions_collision_rate: 0.0,
+            causal_transactions_respect_early_finality: true, 
         }
     }
 }
@@ -122,6 +124,7 @@ impl Parameters {
         info!("Cross-shard occurrence rate set to {:.2}%", self.cross_shard_occurance_rate * 100.0);
         info!("Cross-shard failure rate set to {:.2}%", self.cross_shard_failure_rate * 100.0);
         info!("Causally dependent transaction collision rate set to {:.2}%", self.causal_transactions_collision_rate * 100.0);
+        info!("Causal transactions respect early finality: {}", self.causal_transactions_respect_early_finality);
         
     }
 }

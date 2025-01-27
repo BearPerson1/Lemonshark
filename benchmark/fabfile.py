@@ -33,7 +33,9 @@ def local(ctx, debug=True):
         'max_batch_delay': 200,  # ms
         'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
         'cross_shard_failure_rate': 0.3, 
-        'causal_transactions_collision_rate':0.5 # how often we have collisions when doing causally dependant transactions
+        'causal_transactions_collision_rate':0.5, # how often we have collisions when doing causally dependant transactions
+        'causal_transactions_respect_early_finality': True # if true, early commits will be communicated to clients. 
+        
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)
@@ -122,7 +124,8 @@ def remote(ctx, debug=True):
         'max_batch_delay': 200,  # ms
         'cross_shard_occurance_rate': 1.0,
         'cross_shard_failure_rate': 0.3,
-        'causal_transactions_collision_rate':0.1
+        'causal_transactions_collision_rate':0.1,
+        'causal_transactions_respect_early_finality': True
     }
     try:
         Bench(ctx).run(bench_params, node_params, debug)

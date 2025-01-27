@@ -158,6 +158,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 parameters.cross_shard_occurance_rate,
                 parameters.cross_shard_failure_rate,
                 parameters.causal_transactions_collision_rate,
+                parameters.causal_transactions_respect_early_finality,
                 tx_client_messages.clone(),
                 keypair.name,
             );

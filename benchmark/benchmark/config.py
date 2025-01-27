@@ -253,6 +253,10 @@ class NodeParameters:
                     raise ConfigError('causal_transactions_collision_rate must be between 0.0 and 1.0')
                 float_inputs.append(rate)
 
+            if 'causal_transactions_respect_early_finality' in json:
+                if not isinstance(json['causal_transactions_respect_early_finality'], bool):
+                    raise ConfigError('causal_transactions_respect_early_finality must be a boolean')
+
             if not all(isinstance(x, int) for x in inputs):
                 raise ConfigError('Invalid integer parameters type')
 

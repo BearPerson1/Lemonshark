@@ -48,8 +48,10 @@ pub struct Dolphin {
     cross_shard_occurance_rate: f64,
     cross_shard_failure_rate: f64,
     causal_transactions_collision_rate: f64,
+    causal_transactions_respect_early_finality: bool,
     tx_client: Sender<ClientMessage>,
-    name: PublicKey
+    name: PublicKey,
+   
 
 }
 
@@ -68,6 +70,7 @@ impl Dolphin {
         cross_shard_occurance_rate: f64,
         cross_shard_failure_rate: f64,
         causal_transactions_collision_rate: f64,
+        causal_transactions_respect_early_finality: bool,
         tx_client: Sender<ClientMessage>, 
         name: PublicKey,
     ) {
@@ -87,6 +90,7 @@ impl Dolphin {
                 cross_shard_occurance_rate,
                 cross_shard_failure_rate,
                 causal_transactions_collision_rate,
+                causal_transactions_respect_early_finality,
                 tx_client,
                 name,
             }
@@ -286,9 +290,10 @@ impl Dolphin {
                     let tx_client_clone = self.tx_client.clone();
                     let name = self.name;  
                     let mut committer_clone = self.committer.clone();  
+                    let causal_transactions_respect_early_finality = self.causal_transactions_respect_early_finality;
                     // Parallelize it slightly
 
-
+                    
                     tokio::spawn(async move {
                         let early_commit_result = committer_clone.try_early_commit(
                             &mut state_clone,
@@ -308,25 +313,28 @@ impl Dolphin {
                             }
                     
                             // Send to client if needed
-                            if certificate.header.casual_transaction && certificate.header.author == name {
-                                let msg = ClientMessage {
-                                    header: certificate.header.clone(),
-                                    message_type: 1,
-                                };
-                    
-                                if let Err(e) = tx_client_clone.send(msg).await {
-                                    warn!("Failed to send certificate to client: {}", e);
-                                } else {
-                                    debug!(
-                                        "Successfully sent committed certificate to client - Round: {}, Shard: {}", 
-                                        certificate.header.round, 
-                                        certificate.header.shard_num
-                                    );
+                            if causal_transactions_respect_early_finality
+                            {
+                                if certificate.header.casual_transaction && certificate.header.author == name {
+                                    let msg = ClientMessage {
+                                        header: certificate.header.clone(),
+                                        message_type: 1,
+                                    };
+                        
+                                    if let Err(e) = tx_client_clone.send(msg).await {
+                                        warn!("Failed to send early commit certificate to client: {}", e);
+                                    } else {
+                                        debug!(
+                                            "Successfully sent early committed certificate to client - Round: {}, Shard: {}", 
+                                            certificate.header.round, 
+                                            certificate.header.shard_num
+                                        );
+                                    }
                                 }
                             }
+                    
                         }
                     });
-
 //======================================================================
 
                     // If the certificate is not from our virtual round, it cannot help us advance round.
