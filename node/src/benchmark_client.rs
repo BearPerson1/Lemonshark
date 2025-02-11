@@ -333,13 +333,15 @@ async fn main() -> Result<()> {
     .map(|p| p.parse::<u16>())
     .transpose()
     .context("Invalid primary client port")?;
+    //debug!("primary port: {:?}",primary_port);
 
     let target_ip = target.ip();
     
     let primary_to_client_addr = SocketAddr::new(
         target_ip,
-        primary_port.unwrap_or_else(|| target.port() -2)
+        primary_port.unwrap()
     );
+    
     debug!("Primary to client address: {}", primary_to_client_addr);
 
     let client = Client {

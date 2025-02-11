@@ -53,7 +53,7 @@ class CommandMaker:
         assert isinstance(rate, int) and rate >= 0
         assert isinstance(nodes, list)
         assert isinstance(longest_causal_chain, int) and longest_causal_chain >= 0  
-        assert isinstance(primary_client_port, int) and primary_client_port > 0  # This should match the parameter
+        assert isinstance(primary_client_port, int) and primary_client_port > 0  
         assert all(isinstance(x, str) for x in nodes)
         
         nodes = f'--nodes {" ".join(nodes)}' if nodes else ''
