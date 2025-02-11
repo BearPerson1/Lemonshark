@@ -108,9 +108,18 @@ class InstanceManager:
     def _get_ami(self, client):
         # The AMI changes with regions.
         response = client.describe_images(
-            Filters=[{
+            Filters=[
+                {
+            'Name': 'name',
+            'Values': ['ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*']
+            },
+            {
+                'Name': 'state',
+                'Values': ['available']
+            },
+            {
                 'Name': 'description',
-                'Values': ['Canonical, Ubuntu, 20.04 LTS, amd64 focal image build on 2020-10-26']
+                'Values': ['Canonical, Ubuntu, 20.04 LTS, amd64 focal image build on 2023-09-18']
             }]
         )
         return response['Images'][0]['ImageId']
