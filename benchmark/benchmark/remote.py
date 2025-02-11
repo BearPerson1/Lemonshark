@@ -94,6 +94,111 @@ class Bench:
         except GroupException as e:
             raise BenchError('Failed to kill nodes', FabricError(e))
 
+    def _select_hosts(self, bench_parameters):
+        # Collocate the primary and its workers on the same machine.
+        if bench_parameters.collocate:
+            nodes = max(bench_parameters.nodes)
+            # Ensure there are enough hosts.
+            hosts = self.manager.hosts()
+            if sum(len(x) for x in hosts.values()) < nodes:
+                return []
+            # Select the hosts in different data centers.
+            ordered = zip(*hosts.values())
+            ordered = [x for y in ordered for x in y]
+            return ordered[:nodes]
+        # Spawn the primary and each worker on a different machine. Each
+        # authority runs in a single data center.
+        else:
+            primaries = max(bench_parameters.nodes)
+            # Ensure there are enough hosts.
+            hosts = self.manager.hosts()
+            if len(hosts.keys()) < primaries:
+                return []
+            for ips in hosts.values():
+                if len(ips) < bench_parameters.workers + 1:
+                    return []
+            # Ensure the primary and its workers are in the same region.
+            selected = []
+            for region in list(hosts.keys())[:primaries]:
+                ips = list(hosts[region])[:bench_parameters.workers + 1]
+                selected.append(ips)
+            return selected
+
+    def _background_run(self, host, command, log_file):
+        name = splitext(basename(log_file))[0]
+        cmd = f'tmux new -d -s "{name}" "{command} |& tee {log_file}"'
+        c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
+        output = c.run(cmd, hide=True)
+        self._check_stderr(output)
+
+    def _update(self, hosts, collocate, protocol):
+        if collocate:
+            ips = list(set(hosts))
+        else:
+            ips = list(set([x for y in hosts for x in y]))
+        Print.info(
+            f'Updating {len(ips)} machines (branch "{self.settings.branch}")...'
+        )
+        cmd = [
+            f'(cd {self.settings.repo_name} && git fetch -f)',
+            f'(cd {self.settings.repo_name} && git checkout -f {self.settings.branch})',
+            f'(cd {self.settings.repo_name} && git pull -f)',
+            'source $HOME/.cargo/env',
+            f'(cd {self.settings.repo_name}/node && {CommandMaker.compile(protocol)})',
+            CommandMaker.alias_binaries(
+                f'./{self.settings.repo_name}/target/release/'
+            )
+        ]
+        g = Group(*ips, user='ubuntu', connect_kwargs=self.connect)
+        g.run(' && '.join(cmd), hide=True)
+
+    def _config(self, hosts, node_parameters, bench_parameters):
+        Print.info('Generating configuration files...')
+        # Cleanup all local configuration files.
+        cmd = CommandMaker.cleanup()
+        subprocess.run([cmd], shell=True, stderr=subprocess.DEVNULL)
+        # Recompile the latest code.
+        cmd = CommandMaker.compile()
+        subprocess.run(
+            [cmd], check=True, shell=True, cwd=PathMaker.node_crate_path()
+        )
+        # Create alias for the client and nodes binary.
+        cmd = CommandMaker.alias_binaries(PathMaker.binary_path())
+        subprocess.run([cmd], shell=True)
+        # Generate configuration files.
+        keys = []
+        key_files = [PathMaker.key_file(i) for i in range(len(hosts))]
+        for filename in key_files:
+            cmd = CommandMaker.generate_key(filename).split()
+            subprocess.run(cmd, check=True)
+            keys += [Key.from_file(filename)]
+        names = [x.name for x in keys]
+        if bench_parameters.collocate:
+            workers = bench_parameters.workers
+            addresses = OrderedDict(
+                (x, [y] * (workers + 1)) for x, y in zip(names, hosts)
+            )
+        else:
+            addresses = OrderedDict(
+                (x, y) for x, y in zip(names, hosts)
+            )
+        committee = Committee(addresses, self.settings.base_port)
+        good_nodes = committee._get_good_nodes(bench_parameters.faults)
+        committee.print(PathMaker.committee_file())
+        node_parameters.print(PathMaker.parameters_file())
+        # Cleanup all nodes and upload configuration files.
+        names = names[:len(names)-bench_parameters.faults]
+        progress = progress_bar(names, prefix='Uploading config files:')
+        for i, name in enumerate(progress):
+            if name in good_nodes:  # Only upload to non-faulty nodes
+                for ip in committee.ips(name):
+                    c = Connection(ip, user='ubuntu', connect_kwargs=self.connect)
+                    c.run(f'{CommandMaker.cleanup()} || true', hide=True)
+                    c.put(PathMaker.committee_file(), '.')
+                    c.put(PathMaker.key_file(i), '.')
+                    c.put(PathMaker.parameters_file(), '.')
+        return committee
+
     def _run_single(self, rate, committee, bench_parameters, debug=False):
         faults = bench_parameters.faults
 
