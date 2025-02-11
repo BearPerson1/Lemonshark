@@ -338,8 +338,9 @@ async fn main() -> Result<()> {
     
     let primary_to_client_addr = SocketAddr::new(
         target_ip,
-        primary_port.unwrap_or_else(|| target.port() -2 )
+        primary_port.unwrap_or_else(|| target.port() -2)
     );
+    debug!("Primary to client address: {}", primary_to_client_addr);
 
     let client = Client {
         target,
