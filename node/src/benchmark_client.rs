@@ -338,7 +338,7 @@ async fn main() -> Result<()> {
     let target_ip = target.ip();
     
     let primary_to_client_addr = SocketAddr::new(
-        target_ip,
+        "0.0.0.0".parse().unwrap(),
         primary_port.unwrap()
     );
     
