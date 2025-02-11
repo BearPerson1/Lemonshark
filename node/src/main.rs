@@ -128,6 +128,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                     return Ok(());
                 }
             };
+            debug!("Primary to client address: {}", client_address);
     
             // lemonshark
             tokio::spawn(async move {
