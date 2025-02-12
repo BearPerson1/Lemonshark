@@ -128,7 +128,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                     return Ok(());
                 }
             };
-            debug!("Primary to client address: {}", client_address);
+
+            // debug!("Primary to client address: {}", client_address);
     
             // lemonshark
             tokio::spawn(async move {
@@ -138,11 +139,11 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                     let msg = bincode::serialize(&message).unwrap_or_default();
                     client_sender.send(client_address, Bytes::from(msg)).await;
                     
-                    debug!("Sent message to client:");
-                    debug!("├─ Message Type: {}", if message.message_type == 0 { "Header" } else { "Certificate" });
-                    debug!("├─ Round: {}", message.header.round);
-                    debug!("├─ Author: {}", message.header.author);
-                    debug!("└─ To Address: {}", client_address);
+                    // debug!("Sent message to client:");
+                    // debug!("├─ Message Type: {}", if message.message_type == 0 { "Header" } else { "Certificate" });
+                    // debug!("├─ Round: {}", message.header.round);
+                    // debug!("├─ Author: {}", message.header.author);
+                    // debug!("└─ To Address: {}", client_address);
                 }
             });
 
