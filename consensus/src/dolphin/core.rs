@@ -305,8 +305,13 @@ impl Dolphin {
                             if causal_transactions_respect_early_finality
                             {
                                 if certificate.header.casual_transaction && certificate.header.author == name {
+
+                                    let mut header = certificate.header.clone();
+                                    // NOTE: importantly, if its a speculation, we can make it final if its early commit. Ie: it implies the speculation MUST be correct. 
+                                    header.collision_fail = false;
+
                                     let msg = ClientMessage {
-                                        header: certificate.header.clone(),
+                                        header,
                                         message_type: 1,
                                     };
                         
