@@ -141,3 +141,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Ensure benchmark/logs/ is not ignored
+!logs/
+!logs/**
