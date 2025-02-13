@@ -181,12 +181,12 @@ impl Proposer {
         // Add more detailed debugging
         if !special_txn_ids.is_empty() {
             //todo: delete
-            // debug!(
-            //     "Header for round {} contains {} special transaction(s): {:?}", 
-            //     self.round,
-            //     special_txn_ids.len(),
-            //     special_txn_ids
-            // );
+            debug!(
+                "Header for round {} contains {} special transaction(s): {:?}", 
+                self.round,
+                special_txn_ids.len(),
+                special_txn_ids
+            );
 
             causal_transaction = true;
             if let Some(&first_id) = special_txn_ids.first() {
@@ -209,28 +209,28 @@ impl Proposer {
             parents_id_shard.insert((primary_id, parent_shard));
         }
 
-        // debug!(
-        //     "[Primary: {}] Creating header with parents_id_shard: {:?} for round {} shard {}", 
-        //     self.committee.get_primary_id(&self.name),
-        //     parents_id_shard,
-        //     self.round,
-        //     shard_num
-        // ); 
-        // if cross_shard != 0
-        // {
-        //     debug!("Cross-shard going to shard {}, early fail->{}",cross_shard,early_fail);
-        // }
+        debug!(
+            "[Primary: {}] Creating header with parents_id_shard: {:?} for round {} shard {}", 
+            self.committee.get_primary_id(&self.name),
+            parents_id_shard,
+            self.round,
+            shard_num
+        ); 
+        if cross_shard != 0
+        {
+            debug!("Cross-shard going to shard {}, early fail->{}",cross_shard,early_fail);
+        }
         //=============================
 
 
         // todo: delete
         // some debug statements
-        //debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
+        debug!("Creating new header for [primary: {}, round: {}, shard num: {}]",self.committee.get_primary_id(&self.name),self.round,shard_num);
        
-        // if causal_transaction
-        // {
-        //     debug!("Header has causal transaction: [causal_txn_id: {}, fail?: {}]",causal_transaction_id,collision_fail);
-        // }
+        if causal_transaction
+        {
+            debug!("Header has causal transaction: [causal_txn_id: {}, fail?: {}]",causal_transaction_id,collision_fail);
+        }
 
 
 
@@ -283,9 +283,9 @@ impl Proposer {
             if let Err(e) = self.tx_client.send(msg).await {
                 warn!("Failed to send header to client: {}", e);
             } else {
-                // debug!("Successfully sent header to client - Round: {}, Shard: {}", 
-                //     header.round, 
-                //     header.shard_num);
+                debug!("Successfully sent header to client - Round: {}, Shard: {}", 
+                    header.round, 
+                    header.shard_num);
             }
         }
         

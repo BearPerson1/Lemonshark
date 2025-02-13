@@ -64,7 +64,7 @@ impl ClientMessageHandler {
         match msg.message_type {
             0 => {
                 // Header
-                //debug!("Processing Header message from round {}", msg.header.round);
+                debug!("Processing Header message from round {}", msg.header.round);
                 let mut purged = self.purged_headers.lock().unwrap();
                 let mut confirmed = self.confirmed_depth.lock().unwrap();
                 let mut counter = self.last_causal_chain_counter.lock().unwrap();
@@ -81,8 +81,8 @@ impl ClientMessageHandler {
                 {
                     should_send = false;
                 }
-                // debug!("Final state - Confirmed depth: {}, Headers buffered: {}, Certificates buffered: {}, Purged: {}", 
-                //  *confirmed, headers.len(), certs.len(), purged.len());
+                debug!("Final state - Confirmed depth: {}, Headers buffered: {}, Certificates buffered: {}, Purged: {}", 
+                 *confirmed, headers.len(), certs.len(), purged.len());
 
                 Ok(ChainMessage {
                     should_send,
@@ -91,7 +91,7 @@ impl ClientMessageHandler {
             },
             1 => {
                 // Certificate
-                // debug!("Processing Certificate message from round {}", msg.header.round);
+                debug!("Processing Certificate message from round {}", msg.header.round);
 
                 let mut purged = self.purged_headers.lock().unwrap();
                 let mut confirmed = self.confirmed_depth.lock().unwrap();
@@ -107,7 +107,7 @@ impl ClientMessageHandler {
                     h.causal_transaction_id == msg.header.causal_transaction_id &&
                     h.shard_num == msg.header.shard_num
                 }) {
-                    // debug!("Certificate header was previously purged, ignoring");
+                    debug!("Certificate header was previously purged, ignoring");
                     return Ok(ChainMessage {
                         should_send: false,
                         counter: *counter,
@@ -118,11 +118,11 @@ impl ClientMessageHandler {
                 if headers.contains_key(&msg.header.causal_transaction_id) {
                     // Check if this is the smallest transaction ID in headers
                     if let Some(min_id) = headers.keys().min() {
-                        // debug!("Current minimum transaction ID in headers: {}", min_id);
+                        debug!("Current minimum transaction ID in headers: {}", min_id);
                         if msg.header.causal_transaction_id == *min_id {
-                            // debug!("Processing minimum transaction ID certificate");
+                            debug!("Processing minimum transaction ID certificate");
                             if !msg.header.collision_fail {
-                                // debug!("No collision detected, incrementing confirmed depth to {}", *confirmed + 1);
+                                debug!("No collision detected, incrementing confirmed depth to {}", *confirmed + 1);
 
                                 *confirmed += 1;
 
@@ -133,16 +133,16 @@ impl ClientMessageHandler {
                                 if let Some(header) = headers.remove(&msg.header.causal_transaction_id) {
                                     purged.insert(header.clone());
                                 }
-                                // debug!("Removed header for transaction ID {}", msg.header.causal_transaction_id);
+                                debug!("Removed header for transaction ID {}", msg.header.causal_transaction_id);
                                 
                                 // Recursively process any buffered certificates
                                 let mut next_id = msg.header.causal_transaction_id + 1;
-                                // debug!("Checking for chained certificates starting from ID {}", next_id);
+                                debug!("Checking for chained certificates starting from ID {}", next_id);
                                 while let Some(next_cert) = certs.remove(&next_id) {
-                                    // debug!("Found buffered certificate for ID {}", next_id);
+                                    debug!("Found buffered certificate for ID {}", next_id);
                                     if headers.contains_key(&next_id) {
                                         if !next_cert.collision_fail {
-                                            // debug!("Processing chained certificate {}, incrementing confirmed depth", next_id);
+                                            debug!("Processing chained certificate {}, incrementing confirmed depth", next_id);
 
                                             *confirmed += 1;
                                             //NOTE: for performance check
@@ -154,7 +154,7 @@ impl ClientMessageHandler {
                                             next_id += 1;
                                         } else {
                                             // Collision failed, purge buffers
-                                            // debug!("Collision detected in chained certificate {}, purging buffers", next_id);
+                                            debug!("Collision detected in chained certificate {}, purging buffers", next_id);
 
                                             *confirmed+=1;
 
@@ -169,13 +169,13 @@ impl ClientMessageHandler {
                                             break;
                                         }
                                     } else {
-                                        // debug!("No matching header found for certificate {}, stopping chain processing", next_id);
+                                        debug!("No matching header found for certificate {}, stopping chain processing", next_id);
                                         break;
                                     }
                                 }
                             } else {
                                 // Collision failed, purge buffers
-                                // debug!("Collision detected in minimum ID certificate, purging buffers");
+                                debug!("Collision detected in minimum ID certificate, purging buffers");
                                 
                                 *confirmed += 1;
 
@@ -190,14 +190,14 @@ impl ClientMessageHandler {
                             }
                         } else {
                             // Not the smallest ID, buffer the certificate
-                            // debug!("Certificate {} is not the minimum ({}), buffering for later",msg.header.causal_transaction_id, min_id);
+                            debug!("Certificate {} is not the minimum ({}), buffering for later",msg.header.causal_transaction_id, min_id);
                             certs.insert(msg.header.causal_transaction_id, msg.header.clone());
                             should_send = false;
                         }
                     }
                 } else {
                     // Certificate doesn't correspond to any header we're tracking
-                    // debug!("No matching header found for certificate {}, ignoring", msg.header.causal_transaction_id);
+                    debug!("No matching header found for certificate {}, ignoring", msg.header.causal_transaction_id);
                     should_send = false;
                 }
 
@@ -215,11 +215,11 @@ impl ClientMessageHandler {
 
                 }
                 
-                // debug!("Final state - Confirmed depth: {}, Headers buffered: {}, Certificates buffered: {}, Purged: {}", 
-                // *confirmed, headers.len(), certs.len(), purged.len());
+                debug!("Final state - Confirmed depth: {}, Headers buffered: {}, Certificates buffered: {}, Purged: {}", 
+                *confirmed, headers.len(), certs.len(), purged.len());
 
 
-                // debug!("counter: {}, confirmed: {}", counter, confirmed);
+                debug!("counter: {}, confirmed: {}", counter, confirmed);
 
                 Ok(ChainMessage {
                     should_send,
@@ -243,12 +243,12 @@ impl MessageHandler for ClientMessageHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
         match bincode::deserialize::<ClientMessage>(&message) {
             Ok(msg) => {
-                // debug!("Received Message:");
-                // debug!("├─ Message Type: {}", if msg.message_type == 0 { "Header" } else { "Certificate" });
-                // debug!("├─ Round: {}", msg.header.round);
-                // debug!("├─ Collision fail? {} ",msg.header.collision_fail);
-                // debug!("├─ Causal txn id: {}",msg.header.causal_transaction_id);
-                // debug!("├─ Shard: {}", msg.header.shard_num);
+                debug!("Received Message:");
+                debug!("├─ Message Type: {}", if msg.message_type == 0 { "Header" } else { "Certificate" });
+                debug!("├─ Round: {}", msg.header.round);
+                debug!("├─ Collision fail? {} ",msg.header.collision_fail);
+                debug!("├─ Causal txn id: {}",msg.header.causal_transaction_id);
+                debug!("├─ Shard: {}", msg.header.shard_num);
                 //debug!("├─ Author: {}", msg.header.author);
                 //debug!("├─ Parent Shards: {:?}", msg.header.parents_id_shard);
                 //debug!("└─ Payload Size: {} bytes", msg.header.payload.len());
@@ -342,7 +342,7 @@ async fn main() -> Result<()> {
         primary_port.unwrap()
     );
     
-   // debug!("Primary to client address: {}", primary_to_client_addr);
+    debug!("Primary to client address: {}", primary_to_client_addr);
 
     let client = Client {
         target,
@@ -417,7 +417,7 @@ impl Client {
             tx.resize(self.size, 0u8);
             let bytes = tx.split().freeze();
             transport.send(bytes).await?;
-            // debug!("Sent initial causal chain transaction");
+            debug!("Sent initial causal chain transaction");
 
             // NOTE: This log entry is used to compute performance.
             info!("Sending causal-transaction {}", 1);

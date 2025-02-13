@@ -269,10 +269,10 @@ impl Dolphin {
                     }
                     // Print debug state
 
-                    // self.with_state(&state, |state| {
-                    //     state.print_state(self.committee.get_all_primary_ids());
-                    // }).await;
-                    // self.print_shard_last_committed_round();
+                    self.with_state(&state, |state| {
+                        state.print_state(self.committee.get_all_primary_ids());
+                    }).await;
+                    self.print_shard_last_committed_round();
 
                     // Early commit processing
                     let state_clone = Arc::clone(&state);

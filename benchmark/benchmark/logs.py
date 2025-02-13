@@ -5,6 +5,8 @@ from multiprocessing import Pool
 from os.path import join
 from re import findall, search
 from statistics import mean
+import numpy as np
+import matplotlib.pyplot as plt
 
 from benchmark.utils import Print
 
@@ -198,6 +200,7 @@ class LogParser:
 
     def _end_to_end_latency(self):
         latency = []
+        print_once = False
         for sent, received in zip(self.sent_samples, self.received_samples):
             for tx_id, batch_id in received.items():
                 if batch_id in self.commits:
@@ -207,7 +210,20 @@ class LogParser:
                     latency_value = end - start
                     # print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
                     latency.append(latency_value)
+                    if not print_once and latency_value > 100:
+                        print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
+                        print_once = True
             # print('-----------------------------------------')  # Delimiter
+        if latency:
+            latency_array = np.array(latency)
+            
+            plt.figure(figsize=(10, 6))
+            plt.hist(latency_array, bins=50, alpha=0.75, color='blue', edgecolor='black')
+            plt.title('End-to-End Latency Distribution')
+            plt.xlabel('Latency (seconds)')
+            plt.ylabel('Frequency')
+            plt.grid(True)
+            plt.savefig('end_to_end_latency_distribution.png')
         return mean(latency) if latency else 0
 
     ## lemonshark

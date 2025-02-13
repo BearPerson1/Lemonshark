@@ -1,7 +1,7 @@
 import sys
 import os
 
-# usage: python run_log_parsing.py ../benchmark/logs 0
+# usage: python3 run_log_parsing.py ../benchmark/logs 0
 # 0 is num faults
 
 # Add the parent directory to the Python path

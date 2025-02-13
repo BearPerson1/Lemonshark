@@ -150,11 +150,11 @@ impl Core {
     async fn process_header(&mut self, header: &Header) -> DagResult<()> {
         debug!("Processing header {:?}", header);
 
-        // debug!("Verbose processing header]: id: {}, round: {}, shard num: {}",
-        //     self.committee.get_primary_id(&header.author),
-        //     header.round,
-        //     header.shard_num
-        // );
+        debug!("Verbose processing header]: id: {}, round: {}, shard num: {}",
+            self.committee.get_primary_id(&header.author),
+            header.round,
+            header.shard_num
+        );
 
        
         // Indicate that we are processing this header.
@@ -303,10 +303,10 @@ impl Core {
         if certificate.round() > self.gc_round + 1
             && !self.synchronizer.deliver_certificate(&certificate).await?
         {
-            // debug!(
-            //     "Processing of {:?} suspended: missing ancestors",
-            //     certificate
-            // );
+            debug!(
+                "Processing of {:?} suspended: missing ancestors",
+                certificate
+            );
             return Ok(());
         }
 
