@@ -276,7 +276,7 @@ impl MessageHandler for WorkerReceiverHandler {
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized) {
             Ok(WorkerMessage::Batch(batch, special_txn_id)) => {
-                debug!("Worker received batch with special_txn_id: {:?}", special_txn_id);
+                //debug!("Worker received batch with special_txn_id: {:?}", special_txn_id);
                 self.tx_processor
                     .send(serialized.to_vec())
                     .await

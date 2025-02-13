@@ -143,7 +143,7 @@ impl Primary {
         );
 
         // TODO: delete
-       debug!("PRIMARY: {:?}",committee.primary_to_client(&name));
+    //    debug!("PRIMARY: {:?}",committee.primary_to_client(&name));
 
         // The `Synchronizer` provides auxiliary methods helping to `Core` to sync.
         let synchronizer = Synchronizer::new(

@@ -120,10 +120,10 @@ impl BatchMaker {
             .collect();
 
         // todo: delete
-        debug!("Found {} total transactions, {} special transactions", 
-        tx_ids.len(),
-        tx_ids.iter().filter(|(tx_type, _)| *tx_type == 2).count()
-        );
+        // debug!("Found {} total transactions, {} special transactions", 
+        // tx_ids.len(),
+        // tx_ids.iter().filter(|(tx_type, _)| *tx_type == 2).count()
+        // );
     
         // Get the special transaction ID if there is one
         let special_txn_id = tx_ids.iter()
@@ -134,11 +134,11 @@ impl BatchMaker {
         let batch: Vec<_> = self.current_batch.drain(..).collect();
 
         // todo: delete
-        debug!("=== Batch Sending Details ===");
-        debug!("Number of transactions: {}", batch.len());
-        debug!("Special transaction ID: {:?}", special_txn_id);
-        debug!("Worker addresses count: {}", self.workers_addresses.len());
-        debug!("Current batch size before clearing: {}", self.current_batch_size);
+        // debug!("=== Batch Sending Details ===");
+        // debug!("Number of transactions: {}", batch.len());
+        // debug!("Special transaction ID: {:?}", special_txn_id);
+        // debug!("Worker addresses count: {}", self.workers_addresses.len());
+        // debug!("Current batch size before clearing: {}", self.current_batch_size);
 
 
         let message = WorkerMessage::Batch(batch, special_txn_id);
