@@ -169,12 +169,12 @@ impl Dolphin {
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
                     debug!("Processing cert {:?}", certificate);
-                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
-                        certificate.header.author,
-                        self.committee.get_primary_id(&certificate.header.author),
-                        certificate.header.round,
-                        certificate.header.shard_num
-                    );
+                    // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                    //     certificate.header.author,
+                    //     self.committee.get_primary_id(&certificate.header.author),
+                    //     certificate.header.round,
+                    //     certificate.header.shard_num
+                    // );
                     let virtual_round = certificate.virtual_round();
 
                     // Add the new certificate to the local storage
@@ -228,10 +228,10 @@ impl Dolphin {
                             if let Err(e) = self.tx_client.send(msg).await {
                                 warn!("Failed to send certificate to client: {}", e);
                             } else {
-                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
-                                    certificate.header.round,
-                                    certificate.header.shard_num
-                                );
+                                // debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
+                                //     certificate.header.round,
+                                //     certificate.header.shard_num
+                                // );
                             }
                         }
 
@@ -245,12 +245,12 @@ impl Dolphin {
                             state.remove_early_committed_certs(&certificate);
                         }).await;
 
-                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
-                            certificate.header.author,
-                            self.committee.get_primary_id(&certificate.header.author),
-                            certificate.header.round,
-                            certificate.header.shard_num
-                        );
+                        // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                        //     certificate.header.author,
+                        //     self.committee.get_primary_id(&certificate.header.author),
+                        //     certificate.header.round,
+                        //     certificate.header.shard_num
+                        // );
 
                         #[cfg(feature = "benchmark")]
                         for digest in certificate.header.payload.keys() {
@@ -268,10 +268,10 @@ impl Dolphin {
                     }
 
                     // Print debug state
-                    self.with_state(&state, |state| {
-                        state.print_state(self.committee.get_all_primary_ids());
-                    }).await;
-                    self.print_shard_last_committed_round();
+                    // self.with_state(&state, |state| {
+                    //     state.print_state(self.committee.get_all_primary_ids());
+                    // }).await;
+                    // self.print_shard_last_committed_round();
 
                     // Early commit processing
                     let state_clone = Arc::clone(&state);
@@ -294,6 +294,7 @@ impl Dolphin {
                         for certificate in &early_commit_result {
                             #[cfg(feature = "benchmark")]
                             for digest in certificate.header.payload.keys() {
+                                // NOTE: this is for perf eval
                                 info!("Early-Committed {} -> {:?}", certificate.header, digest);
                             }
 
