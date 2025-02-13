@@ -169,12 +169,12 @@ impl Dolphin {
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
                     debug!("Processing cert {:?}", certificate);
-                    // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
-                    //     certificate.header.author,
-                    //     self.committee.get_primary_id(&certificate.header.author),
-                    //     certificate.header.round,
-                    //     certificate.header.shard_num
-                    // );
+                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                        certificate.header.author,
+                        self.committee.get_primary_id(&certificate.header.author),
+                        certificate.header.round,
+                        certificate.header.shard_num
+                    );
                     let virtual_round = certificate.virtual_round();
 
                     // Add the new certificate to the local storage
@@ -203,16 +203,16 @@ impl Dolphin {
                     }
 
                     // Log the latest committed round of every authority (for debug)
-                    // if log_enabled!(log::Level::Debug) {
-                    //     let state_guard = state.lock().await;
-                    //     for (name, round) in &state_guard.last_committed {
-                    //         debug!("Latest commit of {}| id:{} : Round {}",
-                    //             name,
-                    //             self.committee.get_primary_id(name),
-                    //             round
-                    //         );
-                    //     }
-                    // }
+                    if log_enabled!(log::Level::Debug) {
+                        let state_guard = state.lock().await;
+                        for (name, round) in &state_guard.last_committed {
+                            debug!("Latest commit of {}| id:{} : Round {}",
+                                name,
+                                self.committee.get_primary_id(name),
+                                round
+                            );
+                        }
+                    }
 
                     // Output the sequence in the right order.
                     for certificate in sequence {
@@ -229,10 +229,10 @@ impl Dolphin {
                             if let Err(e) = self.tx_client.send(msg).await {
                                 warn!("Failed to send certificate to client: {}", e);
                             } else {
-                                // debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
-                                //     certificate.header.round,
-                                //     certificate.header.shard_num
-                                // );
+                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
+                                    certificate.header.round,
+                                    certificate.header.shard_num
+                                );
                             }
                         }
 
@@ -246,12 +246,12 @@ impl Dolphin {
                             state.remove_early_committed_certs(&certificate);
                         }).await;
 
-                        // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
-                        //     certificate.header.author,
-                        //     self.committee.get_primary_id(&certificate.header.author),
-                        //     certificate.header.round,
-                        //     certificate.header.shard_num
-                        // );
+                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                            certificate.header.author,
+                            self.committee.get_primary_id(&certificate.header.author),
+                            certificate.header.round,
+                            certificate.header.shard_num
+                        );
 
                         #[cfg(feature = "benchmark")]
                         for digest in certificate.header.payload.keys() {
