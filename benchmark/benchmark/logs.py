@@ -204,7 +204,10 @@ class LogParser:
                     assert tx_id in sent  # We receive txs that we sent.
                     start = sent[tx_id]
                     end = self.commits[batch_id]
-                    latency += [end-start]
+                    latency_value = end - start
+                    # print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
+                    latency.append(latency_value)
+            # print('-----------------------------------------')  # Delimiter
         return mean(latency) if latency else 0
 
     ## lemonshark
@@ -218,9 +221,12 @@ class LogParser:
                 # Initialize with regular commit time if it exists
                 commit_time = self.commits.get(digest, float('inf'))
                 
-                # Compare with early commit time if it exists
                 if digest in self.early_commits:
-                    commit_time = min(commit_time, self.early_commits[digest])
+                    # Skip if digest is in early_commits but not in commits
+                    if digest not in self.commits:
+                        continue
+                    early_commit_time = self.early_commits[digest]
+                    commit_time = min(commit_time, early_commit_time)
                 
                 # Only add if we found a valid commit (regular or early)
                 if commit_time != float('inf'):
@@ -239,15 +245,21 @@ class LogParser:
                     commit_time = self.commits[batch_id]
                 
                 if batch_id in self.early_commits:
-                    commit_time = min(commit_time, self.early_commits[batch_id])
+                    # Skip if batch_id is in early_commits but not in commits
+                    if batch_id not in self.commits:
+                        continue
+                    early_commit_time = self.early_commits[batch_id]
+                    commit_time = min(commit_time, early_commit_time)
                 
+                # Only calculate latency if commit_time is updated
                 if commit_time != float('inf'):
                     assert tx_id in sent  # We receive txs that we sent.
                     start = sent[tx_id]
-                    latency.append(commit_time - start)
+                    latency_value = commit_time - start
+                    latency.append(latency_value)
+                    # print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
         
         return mean(latency) if latency else 0
-
 
     ## Lemonshark
     def get_causal_transaction_duration(self):
