@@ -203,16 +203,16 @@ impl Dolphin {
                     }
 
                     // Log the latest committed round of every authority (for debug)
-                    if log_enabled!(log::Level::Debug) {
-                        let state_guard = state.lock().await;
-                        for (name, round) in &state_guard.last_committed {
-                            debug!("Latest commit of {}| id:{} : Round {}",
-                                name,
-                                self.committee.get_primary_id(name),
-                                round
-                            );
-                        }
-                    }
+                    // if log_enabled!(log::Level::Debug) {
+                    //     let state_guard = state.lock().await;
+                    //     for (name, round) in &state_guard.last_committed {
+                    //         debug!("Latest commit of {}| id:{} : Round {}",
+                    //             name,
+                    //             self.committee.get_primary_id(name),
+                    //             round
+                    //         );
+                    //     }
+                    // }
 
                     // Output the sequence in the right order.
                     for certificate in sequence {

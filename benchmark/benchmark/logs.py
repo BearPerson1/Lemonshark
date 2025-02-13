@@ -206,6 +206,7 @@ class LogParser:
                     end = self.commits[batch_id]
                     latency += [end-start]
         return mean(latency) if latency else 0
+
     ## lemonshark
     
     def _early_consensus_latency(self):
@@ -227,78 +228,26 @@ class LogParser:
         
         return mean(latency) if latency else 0
 
-    # def _early_end_to_end_latency(self):
-    #     latency = []
-    #     for sent, received in zip(self.sent_samples, self.received_samples):
-    #         for tx_id, batch_id in received.items():
-    #             # Check if transaction exists in either commit type
-    #             commit_time = float('inf')
-                
-    #             if batch_id in self.commits:
-    #                 commit_time = self.commits[batch_id]
-                
-    #             if batch_id in self.early_commits:
-    #                 commit_time = min(commit_time, self.early_commits[batch_id])
-                
-    #             if commit_time != float('inf'):
-    #                 assert tx_id in sent  # We receive txs that we sent.
-    #                 start = sent[tx_id]
-    #                 latency.append(commit_time - start)
-        
-    #     return mean(latency) if latency else 0
-
     def _early_end_to_end_latency(self):
         latency = []
-        missing_early = 0
-        missing_regular = 0
-        missing_both = 0
-
-        print("Debug Early End-to-End Latency:")
-        print(f"Number of sent_samples entries: {len(self.sent_samples)}")
-        print(f"Number of received_samples entries: {len(self.received_samples)}")
-        print(f"Number of commits: {len(self.commits)}")
-        print(f"Number of early_commits: {len(self.early_commits)}")
-        
         for sent, received in zip(self.sent_samples, self.received_samples):
             for tx_id, batch_id in received.items():
-                has_regular = batch_id in self.commits
-                has_early = batch_id in self.early_commits
-                
-                if not has_regular and not has_early:
-                    missing_both += 1
-                elif not has_regular:
-                    missing_regular += 1
-                elif not has_early:
-                    missing_early += 1
-                    
+                # Check if transaction exists in either commit type
                 commit_time = float('inf')
                 
-                if has_regular:
+                if batch_id in self.commits:
                     commit_time = self.commits[batch_id]
                 
-                if has_early:
-                    early_time = self.early_commits[batch_id]
-                    commit_time = min(commit_time, early_time)
-                    if early_time > commit_time:
-                        print(f"Warning: Early commit time ({early_time}) > commit time ({commit_time}) for batch {batch_id}")
+                if batch_id in self.early_commits:
+                    commit_time = min(commit_time, self.early_commits[batch_id])
                 
                 if commit_time != float('inf'):
-                    if tx_id not in sent:
-                        print(f"Warning: tx_id {tx_id} in received but not in sent")
-                        continue
-                        
+                    assert tx_id in sent  # We receive txs that we sent.
                     start = sent[tx_id]
-                    current_latency = commit_time - start
-                    if current_latency < 0:
-                        print(f"Warning: Negative latency for batch {batch_id}: {current_latency}")
-                    latency.append(current_latency)
-        
-        print(f"Missing both commits: {missing_both}")
-        print(f"Missing regular commits: {missing_regular}")
-        print(f"Missing early commits: {missing_early}")
-        print(f"Total latencies calculated: {len(latency)}")
+                    latency.append(commit_time - start)
         
         return mean(latency) if latency else 0
+
 
     ## Lemonshark
     def get_causal_transaction_duration(self):
@@ -415,3 +364,10 @@ class LogParser:
                 workers += [f.read()]
 
         return cls(clients, primaries, workers, faults=faults)
+
+
+if __name__ == "__main__":
+    directory = sys.argv[1]
+    faults = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+    log_parser = LogParser.process(directory, faults=faults)
+    print(log_parser.result())
