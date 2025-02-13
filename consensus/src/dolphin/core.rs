@@ -170,11 +170,11 @@ impl Dolphin {
 
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
-                    // debug!("Processing cert {:?}", certificate);
-                    // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
-                    //     self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
-                    //     certificate.header.shard_num
-                    //     );
+                    debug!("Processing cert {:?}", certificate);
+                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
+                        self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
+                        certificate.header.shard_num
+                        );
                     let virtual_round = certificate.virtual_round();
 
                     // Add the new certificate to the local storage.
@@ -196,15 +196,15 @@ impl Dolphin {
                    }
 
                     // Log the latest committed round of every authority (for debug).
-                    // if log_enabled!(log::Level::Debug) {
-                    //     for (name, round) in &state.last_committed {
-                    //         debug!("Latest commit of {}| id:{} : Round {}", 
-                    //             name, 
-                    //             self.committee.get_primary_id(name),
-                    //             round
-                    //             );
-                    //     }
-                    // }
+                    if log_enabled!(log::Level::Debug) {
+                        for (name, round) in &state.last_committed {
+                            debug!("Latest commit of {}| id:{} : Round {}", 
+                                name, 
+                                self.committee.get_primary_id(name),
+                                round
+                                );
+                        }
+                    }
                     // Output the sequence in the right order.
                     for certificate in sequence {
                         #[cfg(not(feature = "benchmark"))]
@@ -212,7 +212,7 @@ impl Dolphin {
 
 
                         // lemonshark: send it to client
-                        // =================================
+                        // todo: change some logic
                         if certificate.header.casual_transaction && certificate.header.author == self.name
                         {
                             let msg = ClientMessage {
@@ -223,14 +223,14 @@ impl Dolphin {
                             if let Err(e) = self.tx_client.send(msg).await {
                                 warn!("Failed to send certificate to client: {}", e);
                             } else {
-                                // debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
-                                //     certificate.header.round, 
-                                //     certificate.header.shard_num);
+                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
+                                    certificate.header.round, 
+                                    certificate.header.shard_num);
                             }
                         }
                         // =================================
 
-                        // Lemonshark: everytime a commit is performed, we will have to update shard_last_committed_round
+                        // Lemonshark: verytime a commit is performed, we will have to update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round
                         {
                             self.shard_last_committed_round.insert(certificate.header.shard_num,certificate.header.round);
@@ -240,10 +240,10 @@ impl Dolphin {
                         state.remove_early_committed_certs(&certificate);
 
 
-                        // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
-                        // self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
-                        // certificate.header.shard_num
-                        // );
+                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
+                        self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
+                        certificate.header.shard_num
+                        );
 
 
                         #[cfg(feature = "benchmark")]
@@ -266,11 +266,23 @@ impl Dolphin {
 // Lemonshark
 // =======================================================================
                     // TODO: remove
-                    // state.print_state(self.committee.get_all_primary_ids());
-                    // self.print_shard_last_committed_round();
+                    state.print_state(self.committee.get_all_primary_ids());
+                    self.print_shard_last_committed_round();
 
                     // Lemonshark: Try and eary commit
                     // NOTE: This runs every time a certificate is added, but must happen after a potential commit. 
+
+
+                    // let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round, virtual_round as u64);
+                    // for certificate in early_commit_sequence {
+                    //     state.add_early_committed_certs(certificate.clone());
+                    //     #[cfg(feature = "benchmark")]
+                    //     for digest in certificate.header.payload.keys() {
+                    //         // NOTE: This log entry is used to compute performance.
+                    //         // TODO: change this so that benchmark can regex it in logs.py
+                    //         info!("Early Committed {} -> {:?}", certificate.header, digest); 
+                    //     }
+                    // }
 
 
                     let mut state_clone = state.clone();  
@@ -296,7 +308,6 @@ impl Dolphin {
                             #[cfg(feature = "benchmark")]
                             {
                                 for digest in certificate.header.payload.keys() {
-                                    // NOTE: this log entry is used to compute performance.
                                     info!("Early-Committed {} -> {:?}", certificate.header, digest);
                                 }
                             }
@@ -318,11 +329,11 @@ impl Dolphin {
                                     if let Err(e) = tx_client_clone.send(msg).await {
                                         warn!("Failed to send early commit certificate to client: {}", e);
                                     } else {
-                                        // debug!(
-                                        //     "Successfully sent early committed certificate to client - Round: {}, Shard: {}", 
-                                        //     certificate.header.round, 
-                                        //     certificate.header.shard_num
-                                        // );
+                                        debug!(
+                                            "Successfully sent early committed certificate to client - Round: {}, Shard: {}", 
+                                            certificate.header.round, 
+                                            certificate.header.shard_num
+                                        );
                                     }
                                 }
                             }
