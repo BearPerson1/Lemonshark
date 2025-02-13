@@ -13,12 +13,12 @@ from benchmark.remote import Bench, BenchError
 def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
-        'faults': 1,
+        'faults': 0,
         'nodes': 4,
         'workers': 1,
         'rate': 50_000,
         'tx_size': 512,
-        'duration': 20,
+        'duration': 300,
         'protocol': 'dolphin',
         'longest_causal_chain':10 # longest chain of causally dependant trans a client will send
     }
