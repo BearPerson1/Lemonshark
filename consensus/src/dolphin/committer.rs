@@ -175,12 +175,8 @@ impl Committer {
                     // skip if checked previously
                     if state.skipped_certs.contains(cert)
                     {
-<<<<<<< HEAD
-                        // debug!("Skipping certificate [round:{} shard:{}] - already checked",cert.header.round,cert.header.shard_num);
-                        
-=======
                         debug!("Skipping certificate [round:{} shard:{}] - already checked",cert.header.round,cert.header.shard_num);
->>>>>>> parent of 672c076... Re-apply debug log changes except for core.rs and fabfile.py
+
                         continue;
                     }
 
