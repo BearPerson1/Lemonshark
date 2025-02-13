@@ -14,11 +14,11 @@ def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
         'faults': 0,
-        'nodes': 10,
+        'nodes': 20,
         'workers': 1,
         'rate': 25_000,
         'tx_size': 512,
-        'duration': 300,
+        'duration': 60,
         'protocol': 'dolphin',
         'longest_causal_chain':10 # longest chain of causally dependant trans a client will send
     }
@@ -26,7 +26,7 @@ def local(ctx, debug=True):
         'timeout': 1_000,  # ms
         'header_size': 1_000,  # bytes
         'max_header_delay': 200,  # ms
-        'gc_depth': 50,  # rounds
+        'gc_depth': 1000,  # rounds
         'sync_retry_delay': 1_000,  # ms
         'sync_retry_nodes': 4,  # number of nodes
         'batch_size': 500_000,  # bytes

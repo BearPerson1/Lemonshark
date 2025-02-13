@@ -176,6 +176,7 @@ impl Committer {
                     if state.skipped_certs.contains(cert)
                     {
                         // debug!("Skipping certificate [round:{} shard:{}] - already checked",cert.header.round,cert.header.shard_num);
+                        
                         continue;
                     }
 
