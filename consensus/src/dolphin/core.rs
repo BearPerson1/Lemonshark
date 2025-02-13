@@ -194,6 +194,7 @@ impl Dolphin {
                         self.committer.try_commit(&certificate, &mut state_guard, &mut virtual_state)
                     };
 
+
                     if !sequence.is_empty() {
                         // lemonshark: clean up checked list
                         self.with_state(&state, |state| {
@@ -266,8 +267,8 @@ impl Dolphin {
                             warn!("Failed to output certificate: {}", e);
                         }
                     }
-
                     // Print debug state
+
                     // self.with_state(&state, |state| {
                     //     state.print_state(self.committee.get_all_primary_ids());
                     // }).await;

@@ -18,7 +18,7 @@ def local(ctx, debug=True):
         'workers': 1,
         'rate': 25_000,
         'tx_size': 512,
-        'duration': 30,
+        'duration': 300,
         'protocol': 'dolphin',
         'longest_causal_chain':10 # longest chain of causally dependant trans a client will send
     }
@@ -27,8 +27,8 @@ def local(ctx, debug=True):
         'header_size': 1_000,  # bytes
         'max_header_delay': 200,  # ms
         'gc_depth': 50,  # rounds
-        'sync_retry_delay': 10_000,  # ms
-        'sync_retry_nodes': 3,  # number of nodes
+        'sync_retry_delay': 1_000,  # ms
+        'sync_retry_nodes': 4,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
         'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
