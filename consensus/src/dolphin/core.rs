@@ -290,6 +290,15 @@ impl Dolphin {
                                 virtual_round as u64
                             )
                         };
+<<<<<<< HEAD
+=======
+                    
+                        for certificate in &early_commit_result {
+                            // Add to state
+                            let mut state_guard = state_clone.lock().await;
+                            state_guard.add_early_committed_certs(certificate.clone());
+                        }
+>>>>>>> 5bebb13ef9417fc1f3b87bbbbe456200c35efa82
 
                         for certificate in &early_commit_result {
                             #[cfg(feature = "benchmark")]
@@ -317,12 +326,15 @@ impl Dolphin {
                                     );
                                 }
                             }
+<<<<<<< HEAD
                         }
 
                         for certificate in &early_commit_result {
                             // Add to state
                             let mut state_guard = state_clone.lock().await;
                             state_guard.add_early_committed_certs(certificate.clone());
+=======
+>>>>>>> 5bebb13ef9417fc1f3b87bbbbe456200c35efa82
                         }
                     });
 
