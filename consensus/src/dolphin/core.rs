@@ -11,6 +11,8 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use crypto::PublicKey;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use primary::messages::Header;  // We already have Header from primary
 use primary::ClientMessage;
@@ -43,7 +45,7 @@ pub struct Dolphin {
     // lemonshark stuff:
     // This delimits how far the chain has to check. 
     // <shard, round num = u64>
-    shard_last_committed_round: HashMap <u64,u64>,
+    shard_last_committed_round: HashMap<u64,u64>,
 
     cross_shard_occurance_rate: f64,
     cross_shard_failure_rate: f64,
@@ -51,13 +53,17 @@ pub struct Dolphin {
     causal_transactions_respect_early_finality: bool,
     tx_client: Sender<ClientMessage>,
     name: PublicKey,
-   
-
 }
 
-
-
 impl Dolphin {
+    async fn with_state<F, R>(&self, state: &Arc<Mutex<State>>, f: F) -> R 
+    where
+        F: FnOnce(&mut State) -> R,
+    {
+        let mut state_guard = state.lock().await;
+        f(&mut state_guard)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         committee: Committee,
@@ -99,26 +105,21 @@ impl Dolphin {
         });
     }
 
-    fn init_shard_last_committed_round(&mut self)
-    {
-        for id in 1..=self.committee.size()
-        {
-            self.shard_last_committed_round.insert(id as u64 ,0);
+    fn init_shard_last_committed_round(&mut self) {
+        for id in 1..=self.committee.size() {
+            self.shard_last_committed_round.insert(id as u64, 0);
         }
     }
 
-    fn print_shard_last_committed_round(&mut self)
-    {
+    fn print_shard_last_committed_round(&mut self) {
         debug!("Shard Last Committed Rounds:");
         // Create a vector of keys and sort them
         let mut shard_nums: Vec<_> = self.shard_last_committed_round.keys().collect();
         shard_nums.sort();
         
         // Print each shard's information in sorted order
-        for shard_num in shard_nums 
-        {
-            if let Some(round) = self.shard_last_committed_round.get(shard_num) 
-            {
+        for shard_num in shard_nums {
+            if let Some(round) = self.shard_last_committed_round.get(shard_num) {
                 debug!("├─ Shard {}: Round {}", shard_num, round);
             }
         }
@@ -127,12 +128,11 @@ impl Dolphin {
 
     async fn run(&mut self) {
         // The consensus state (everything else is immutable).
-        let mut state = State::new(self.gc_depth, self.genesis.clone());
+        let state = Arc::new(Mutex::new(State::new(self.gc_depth, self.genesis.clone())));
         let mut virtual_state = VirtualState::new(self.committee.clone(), self.genesis.clone());
 
         // Init the shard_last_committed_round()
         self.init_shard_last_committed_round();
-
 
         // The timer keeping track of the leader timeout.
         let timer = sleep(Duration::from_millis(self.timeout));
@@ -140,7 +140,6 @@ impl Dolphin {
 
         let mut quorum = Some(self.genesis.iter().map(|x| (x.digest(), 0)).collect());
         let mut advance_early = true;
-
 
         loop {
             if (timer.is_elapsed() || advance_early) && quorum.is_some() {
@@ -159,7 +158,6 @@ impl Dolphin {
                     .await
                     .expect("Failed to send virtual parents to primary");
 
-
                 // Reschedule the timer.
                 let deadline = Instant::now() + Duration::from_millis(self.timeout);
                 timer.as_mut().reset(deadline);
@@ -171,86 +169,92 @@ impl Dolphin {
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
                     debug!("Processing cert {:?}", certificate);
-                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
-                        self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
+                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                        certificate.header.author,
+                        self.committee.get_primary_id(&certificate.header.author),
+                        certificate.header.round,
                         certificate.header.shard_num
-                        );
+                    );
                     let virtual_round = certificate.virtual_round();
 
-                    // Add the new certificate to the local storage.
-                    state.add(certificate.clone());
+                    // Add the new certificate to the local storage
+                    self.with_state(&state, |state| {
+                        state.add(certificate.clone());
+                    }).await;
 
-                    // Try adding the certificate to the virtual dag.
+                    // Try adding the certificate to the virtual dag
                     if !virtual_state.try_add(&certificate) {
                         continue;
                     }
                     debug!("Adding virtual {:?}", certificate);
 
-                    // Try to commit.
-                    let sequence = self.committer.try_commit(&certificate, &mut state, &mut virtual_state);
+                    // Try to commit
+                    let sequence = {
+                        let mut state_guard = state.lock().await;
+                        self.committer.try_commit(&certificate, &mut state_guard, &mut virtual_state)
+                    };
 
-                   if !sequence.is_empty()
-                   {
-                    // lemonshark: clean up checked list
-                        state.skipped_certs.clear();
-                   }
+                    if !sequence.is_empty() {
+                        // lemonshark: clean up checked list
+                        self.with_state(&state, |state| {
+                            state.skipped_certs.clear();
+                        }).await;
+                    }
 
-                    // Log the latest committed round of every authority (for debug).
+                    // Log the latest committed round of every authority (for debug)
                     if log_enabled!(log::Level::Debug) {
-                        for (name, round) in &state.last_committed {
-                            debug!("Latest commit of {}| id:{} : Round {}", 
-                                name, 
+                        let state_guard = state.lock().await;
+                        for (name, round) in &state_guard.last_committed {
+                            debug!("Latest commit of {}| id:{} : Round {}",
+                                name,
                                 self.committee.get_primary_id(name),
                                 round
-                                );
+                            );
                         }
                     }
+
                     // Output the sequence in the right order.
                     for certificate in sequence {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
-
                         // lemonshark: send it to client
-                        // todo: change some logic
-                        if certificate.header.casual_transaction && certificate.header.author == self.name
-                        {
+                        if certificate.header.casual_transaction && certificate.header.author == self.name {
                             let msg = ClientMessage {
                                 header: certificate.header.clone(),
                                 message_type: 1,  // 1 for Certificate
                             };
-    
+
                             if let Err(e) = self.tx_client.send(msg).await {
                                 warn!("Failed to send certificate to client: {}", e);
                             } else {
-                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}", 
-                                    certificate.header.round, 
-                                    certificate.header.shard_num);
+                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
+                                    certificate.header.round,
+                                    certificate.header.shard_num
+                                );
                             }
                         }
-                        // =================================
 
-                        // Lemonshark: verytime a commit is performed, we will have to update shard_last_committed_round
-                        if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round
-                        {
-                            self.shard_last_committed_round.insert(certificate.header.shard_num,certificate.header.round);
+                        // Update shard_last_committed_round
+                        if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round {
+                            self.shard_last_committed_round.insert(certificate.header.shard_num, certificate.header.round);
                         }
 
-                        // lemonshark: do some GC for state.early_committed_certs
-                        state.remove_early_committed_certs(&certificate);
+                        // GC for state.early_committed_certs
+                        self.with_state(&state, |state| {
+                            state.remove_early_committed_certs(&certificate);
+                        }).await;
 
-
-                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",certificate.header.author,
-                        self.committee.get_primary_id(&certificate.header.author), certificate.header.round, 
-                        certificate.header.shard_num
+                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                            certificate.header.author,
+                            self.committee.get_primary_id(&certificate.header.author),
+                            certificate.header.round,
+                            certificate.header.shard_num
                         );
-
 
                         #[cfg(feature = "benchmark")]
                         for digest in certificate.header.payload.keys() {
-                            // NOTE: This log entry is used to compute performance.
                             info!("Committed {} -> {:?}", certificate.header, digest);
-
                         }
 
                         self.tx_commit
@@ -262,93 +266,72 @@ impl Dolphin {
                             warn!("Failed to output certificate: {}", e);
                         }
                     }
-// =======================================================================
-// Lemonshark
-// =======================================================================
-                    // TODO: remove
-                    state.print_state(self.committee.get_all_primary_ids());
+
+                    // Print debug state
+                    self.with_state(&state, |state| {
+                        state.print_state(self.committee.get_all_primary_ids());
+                    }).await;
                     self.print_shard_last_committed_round();
 
-                    // Lemonshark: Try and eary commit
-                    // NOTE: This runs every time a certificate is added, but must happen after a potential commit. 
-
-
-                    // let early_commit_sequence = self.committer.try_early_commit(&mut state, &mut self.shard_last_committed_round, virtual_round as u64);
-                    // for certificate in early_commit_sequence {
-                    //     state.add_early_committed_certs(certificate.clone());
-                    //     #[cfg(feature = "benchmark")]
-                    //     for digest in certificate.header.payload.keys() {
-                    //         // NOTE: This log entry is used to compute performance.
-                    //         // TODO: change this so that benchmark can regex it in logs.py
-                    //         info!("Early Committed {} -> {:?}", certificate.header, digest); 
-                    //     }
-                    // }
-
-
-                    let mut state_clone = state.clone();  
+                    // Early commit processing
+                    let state_clone = Arc::clone(&state);
                     let mut shard_last_committed_round_clone = self.shard_last_committed_round.clone();
                     let tx_client_clone = self.tx_client.clone();
-                    let name = self.name;  
-                    let mut committer_clone = self.committer.clone();  
+                    let name = self.name;
+                    let mut committer_clone = self.committer.clone();
                     let causal_transactions_respect_early_finality = self.causal_transactions_respect_early_finality;
-                    // Parallelize it slightly
 
-                    
                     tokio::spawn(async move {
-                        let early_commit_result = committer_clone.try_early_commit(
-                            &mut state_clone,
-                            &mut shard_last_committed_round_clone,
-                            virtual_round as u64
-                        );
+                        let early_commit_result = {
+                            let mut state_guard = state_clone.lock().await;
+                            committer_clone.try_early_commit(
+                                &mut state_guard,
+                                &mut shard_last_committed_round_clone,
+                                virtual_round as u64
+                            )
+                        };
                     
-                        // Rest of the spawned task remains the same
-                        for certificate in early_commit_result {
-                            state_clone.add_early_committed_certs(certificate.clone());
-                            
+                        for certificate in &early_commit_result {
+                            // Add to state
+                            let mut state_guard = state_clone.lock().await;
+                            state_guard.add_early_committed_certs(certificate.clone());
+                        }
+
+                        for certificate in &early_commit_result {
                             #[cfg(feature = "benchmark")]
-                            {
-                                for digest in certificate.header.payload.keys() {
-                                    info!("Early-Committed {} -> {:?}", certificate.header, digest);
+                            for digest in certificate.header.payload.keys() {
+                                info!("Early-Committed {} -> {:?}", certificate.header, digest);
+                            }
+
+                            if causal_transactions_respect_early_finality &&
+                               certificate.header.casual_transaction &&
+                               certificate.header.author == name {
+                                let mut header = certificate.header.clone();
+                                header.collision_fail = false;
+                                let msg = ClientMessage {
+                                    header,
+                                    message_type: 1,
+                                };
+
+                                if let Err(e) = tx_client_clone.send(msg).await {
+                                    warn!("Failed to send early commit certificate to client: {}", e);
+                                } else {
+                                    debug!(
+                                        "Successfully sent early committed certificate to client - Round: {}, Shard: {}",
+                                        certificate.header.round,
+                                        certificate.header.shard_num
+                                    );
                                 }
                             }
-                    
-                            // Send to client if needed
-                            if causal_transactions_respect_early_finality
-                            {
-                                if certificate.header.casual_transaction && certificate.header.author == name {
-
-                                    let mut header = certificate.header.clone();
-                                    // NOTE: importantly, if its a speculation, we can make it final if its early commit. Ie: it implies the speculation MUST be correct. 
-                                    header.collision_fail = false;
-
-                                    let msg = ClientMessage {
-                                        header,
-                                        message_type: 1,
-                                    };
-                        
-                                    if let Err(e) = tx_client_clone.send(msg).await {
-                                        warn!("Failed to send early commit certificate to client: {}", e);
-                                    } else {
-                                        debug!(
-                                            "Successfully sent early committed certificate to client - Round: {}, Shard: {}", 
-                                            certificate.header.round, 
-                                            certificate.header.shard_num
-                                        );
-                                    }
-                                }
-                            }
-                    
                         }
                     });
-//======================================================================
 
-                    // If the certificate is not from our virtual round, it cannot help us advance round.
+                    // Round advancement logic
                     if self.virtual_round != virtual_round {
                         continue;
                     }
                     debug!("Trying to advance round");
 
-                    // Try to advance to the next (virtual) round.
                     let (parents, authors): (BTreeSet<_>, Vec<_>) = virtual_state
                         .dag
                         .get(&virtual_round)
@@ -360,7 +343,6 @@ impl Dolphin {
                         .cloned()
                         .unzip();
 
-                    //if authors.iter().any(|x| x == &self.name) {
                     quorum = (authors
                         .iter()
                         .map(|x| self.committee.stake(x))
@@ -373,11 +355,6 @@ impl Dolphin {
                         _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
                     };
                     debug!("Can early advance for round {}: {}", self.virtual_round, advance_early);
-                    //}
-
-
-
-
                 },
                 () = &mut timer => {
                     // Nothing to do.

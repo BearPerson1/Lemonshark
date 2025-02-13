@@ -14,11 +14,11 @@ def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
         'faults': 0,
-        'nodes': 4,
+        'nodes': 10,
         'workers': 1,
-        'rate': 50_000,
+        'rate': 25_000,
         'tx_size': 512,
-        'duration': 300,
+        'duration': 30,
         'protocol': 'dolphin',
         'longest_causal_chain':10 # longest chain of causally dependant trans a client will send
     }
