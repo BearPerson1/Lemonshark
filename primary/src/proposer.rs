@@ -371,8 +371,8 @@ impl Proposer {
                     //bug fix maybe:
                     if !self.metadata.is_empty() && !self.last_parents.is_empty() {
                         debug!(
-                            "[Pre-Round-Advance] Proposing header with metadata before advancing to round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
-                            round + 1,
+                            "[Pre-Round-Advance] Proposing header with metadata for round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
+                            round ,
                             self.last_parents.len(),
                             self.payload_size,
                             self.header_size
@@ -385,8 +385,8 @@ impl Proposer {
                         debug!("Successfully proposed pre-round-advance header for round {}", self.round);
                     } else {
                         debug!(
-                            "[Pre-Round-Advance] Cannot propose header before round {}: metadata_ready={}, parent_count={}",
-                            round + 1,
+                            "[Pre-Round-Advance] Cannot propose header for round {}: metadata_ready={}, parent_count={}",
+                            round,
                             !self.metadata.is_empty(),
                             self.last_parents.len()
                         );

@@ -1,4 +1,5 @@
 # Copyright(C) Facebook, Inc. and its affiliates.
+import sys
 from datetime import datetime
 from glob import glob
 from multiprocessing import Pool
@@ -25,7 +26,7 @@ class LogParser:
         self.faults = faults
         if isinstance(faults, int):
             self.committee_size = len(primaries) + int(faults)
-            self.workers =  len(workers) // len(primaries)
+            self.workers = len(workers) // len(primaries)
         else:
             self.committee_size = '?'
             self.workers = '?'
@@ -49,7 +50,8 @@ class LogParser:
         proposals, commits, early_commits, self.configs, primary_ips = zip(*results)
         self.proposals = self._merge_results([x.items() for x in proposals])
         self.commits = self._merge_results([x.items() for x in commits])
-        self.early_commits = self._merge_results([x.items() for x in early_commits]) 
+        self.early_commits = self._merge_results([x.items() for x in early_commits])
+
         # Parse the workers logs.
         try:
             with Pool() as p:
@@ -95,7 +97,6 @@ class LogParser:
         samples = {int(s): self._to_posix(t) for t, s in tmp}
 
         # lemonshark: causal transactions:
-
         cc_start_tmp = findall(r'\[(.*Z) .* Sending causal-transaction (\d+)', log)
         cc_start = {int(s): self._to_posix(t) for t, s in cc_start_tmp}
 
@@ -116,13 +117,12 @@ class LogParser:
         tmp = [(d, self._to_posix(t)) for t, d in tmp]
         commits = self._merge_results([tmp])
 
-
-        ## Lemonshark
+        # Lemonshark
         tmp = findall(r'\[(.*Z) .* Early-Committed B\d+\([^ ]+\) -> ([^ ]+=)', log)
         tmp = [(d, self._to_posix(t)) for t, d in tmp]
         early_commits = self._merge_results([tmp])
-        
-        ## Some assertions for lemonshark. 
+
+        # Some assertions for lemonshark
         for digest in early_commits:
             if digest in commits:
                 assert early_commits[digest] <= commits[digest], \
@@ -152,8 +152,8 @@ class LogParser:
             ),
         }
 
-        ip = search(r'booted on (\d+.\d+.\d+.\d+)', log).group(1)
-        
+        ip = search(r'booted on (\d+\.\d+\.\d+\.\d+)', log).group(1)
+
         return proposals, commits, early_commits, configs, ip
 
     def _parse_workers(self, log):
@@ -166,7 +166,7 @@ class LogParser:
         tmp = findall(r'Batch ([^ ]+) contains sample tx (\d+)', log)
         samples = {int(s): d for d, s in tmp}
 
-        ip = search(r'booted on (\d+.\d+.\d+.\d+)', log).group(1)
+        ip = search(r'booted on (\d+\.\d+\.\d+\.\d+)', log).group(1)
 
         return sizes, samples, ip
 
@@ -198,22 +198,43 @@ class LogParser:
         tps = bps / self.size[0]
         return tps, bps, duration
 
+    def plot_transaction_latencies(self, latencies):
+        """
+        Create a line plot of transaction latencies.
+        """
+        transaction_numbers = range(1, len(latencies) + 1)
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(transaction_numbers, latencies, '-o', markersize=3, alpha=0.6)
+        plt.title('Transaction Latency Over Time')
+        plt.xlabel('Transaction Number')
+        plt.ylabel('Latency (seconds)')
+        plt.grid(True, alpha=0.3)
+        
+        avg_latency = np.mean(latencies)
+        plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
+                   label=f'Average Latency: {avg_latency:.2f}s')
+        
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig('transaction_latencies.png')
+        plt.close()
+
     def _end_to_end_latency(self):
         latency = []
         print_once = False
         for sent, received in zip(self.sent_samples, self.received_samples):
             for tx_id, batch_id in received.items():
                 if batch_id in self.commits:
-                    assert tx_id in sent  # We receive txs that we sent.
+                    assert tx_id in sent
                     start = sent[tx_id]
                     end = self.commits[batch_id]
                     latency_value = end - start
-                    # print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
                     latency.append(latency_value)
-                    if not print_once and latency_value > 50:
+                    if not print_once and latency_value > 4:
                         print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
                         print_once = True
-            # print('-----------------------------------------')  # Delimiter
+
         if latency:
             latency_array = np.array(latency)
             
@@ -224,6 +245,10 @@ class LogParser:
             plt.ylabel('Frequency')
             plt.grid(True)
             plt.savefig('end_to_end_latency_distribution.png')
+            plt.close()
+            
+            self.plot_transaction_latencies(latency)
+
         return mean(latency) if latency else 0
 
     ## lemonshark
