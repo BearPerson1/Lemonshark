@@ -362,19 +362,20 @@ impl Proposer {
                 }
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
                     // //todo: delete
-                    debug!("=== Received Batch from Worker ===");
-                    debug!("Worker ID: {}", worker_id);
-                    debug!("Special Transaction ID: {:?}", special_txn_id);
-                    debug!("Received Digest: {:?}", digest);
-                    debug!("Current Payload Size: {} bytes", self.payload_size);
-                    debug!("Digest Size: {} bytes", digest.size());
-                    debug!("Current Number of Digests: {}", self.digests.len());
+                    
+                    // debug!("=== Received Batch from Worker ===");
+                    // debug!("Worker ID: {}", worker_id);
+                    // debug!("Special Transaction ID: {:?}", special_txn_id);
+                    // debug!("Received Digest: {:?}", digest);
+                    // debug!("Current Payload Size: {} bytes", self.payload_size);
+                    // debug!("Digest Size: {} bytes", digest.size());
+                    // debug!("Current Number of Digests: {}", self.digests.len());
                    
 
                     self.payload_size += digest.size();
 
-                    debug!("Current payload size:{}",self.payload_size);
-                    debug!("===================================");
+                    // debug!("Current payload size:{}",self.payload_size);
+                    // debug!("===================================");
                     self.digests.push((digest, worker_id, special_txn_id));
                 }
                 Some(metadata) = self.rx_consensus.recv() => {
