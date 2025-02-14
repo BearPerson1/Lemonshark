@@ -341,6 +341,56 @@ impl Proposer {
                         continue;
                     }
 
+                    // Print header proposal conditions before advancing round
+                    debug!(
+                        "Final header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
+                        self.round,
+                        !self.metadata.is_empty(),
+                        self.payload_size >= self.header_size,
+                        timer.is_elapsed(),
+                        self.payload_size,
+                        self.header_size
+                    );
+
+                    // BUG FIX: We need to check if we can propose a header before advancing to the next round. Else blocks might be missing!!
+
+                    // Check conditions before advancing round
+                    let parent_count = self.last_parents.len();
+                                        
+                    debug!(
+                        "[Pre-Round-Advance] Checking conditions for round {}: metadata_ready={}, parent_count={}, payload_size={}/{}",
+                        self.round,
+                        !self.metadata.is_empty(),
+                        parent_count,
+                        self.payload_size,
+                        self.header_size
+                    );
+
+                    // Only proceed with header creation if we have both metadata and parents
+                    if !self.metadata.is_empty() && !self.last_parents.is_empty() {
+                        debug!(
+                            "[Pre-Round-Advance] Proposing header with metadata before advancing to round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
+                            round + 1,
+                            parent_count,
+                            self.payload_size,
+                            self.header_size
+                        );
+
+                        // Make a header with current round before advancing
+                        self.make_header().await;
+                        self.payload_size = 0;
+
+                        debug!("Successfully proposed pre-round-advance header for round {}", self.round);
+                    } else {
+                        debug!(
+                            "[Pre-Round-Advance] Cannot propose header before round {}: metadata_ready={}, parent_count={}",
+                            round + 1,
+                            !self.metadata.is_empty(),
+                            parent_count
+                        );
+                    }
+
+                    // end of bug fix ========================================
                     // Advance to the next round.
                     self.round = round + 1;
                     debug!("Dag moved to round {}", self.round);
@@ -362,7 +412,7 @@ impl Proposer {
                 }
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
                     // //todo: delete
-                    
+
                     // debug!("=== Received Batch from Worker ===");
                     // debug!("Worker ID: {}", worker_id);
                     // debug!("Special Transaction ID: {:?}", special_txn_id);

@@ -13,6 +13,7 @@ use crypto::PublicKey;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crypto::Digest;
 
 use primary::messages::Header;  // We already have Header from primary
 use primary::ClientMessage;
@@ -142,6 +143,8 @@ impl Dolphin {
         let mut advance_early = true;
 
         loop {
+
+            //// todo: remove
             debug!(
                 "=== Header Proposal Condition Check ===\n\
                  ├─ Timer Status:\n\
@@ -151,16 +154,21 @@ impl Dolphin {
                  │  ├─ advance_early: {}\n\
                  │  └─ virtual_round: {}\n\
                  ├─ Quorum Status:\n\
-                 │  └─ has_quorum: {}\n\
+                 │  ├─ has_quorum: {}\n\
+                 │  ├─ quorum_size: {}\n\
+                 │  └─ threshold: {}\n\
                  └─ Combined Check: (elapsed || advance_early) && has_quorum: {}",
                 timer.is_elapsed(),
                 self.timeout,
                 advance_early,
                 self.virtual_round,
                 quorum.is_some(),
+                quorum.as_ref().map_or(0, |q: &BTreeSet<(Digest, Round)>| q.len()),
+                self.committee.quorum_threshold(),
                 (timer.is_elapsed() || advance_early) && quorum.is_some()
             );
-            
+
+
             if (timer.is_elapsed() || advance_early) && quorum.is_some() {
                 if !advance_early {
                     warn!(
