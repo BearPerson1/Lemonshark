@@ -142,6 +142,25 @@ impl Dolphin {
         let mut advance_early = true;
 
         loop {
+            debug!(
+                "=== Header Proposal Condition Check ===\n\
+                 ├─ Timer Status:\n\
+                 │  ├─ Elapsed: {}\n\
+                 │  └─ Max Delay: {} ms\n\
+                 ├─ Advance Status:\n\
+                 │  ├─ advance_early: {}\n\
+                 │  └─ virtual_round: {}\n\
+                 ├─ Quorum Status:\n\
+                 │  └─ has_quorum: {}\n\
+                 └─ Combined Check: (elapsed || advance_early) && has_quorum: {}",
+                timer.is_elapsed(),
+                self.timeout,
+                advance_early,
+                self.virtual_round,
+                quorum.is_some(),
+                (timer.is_elapsed() || advance_early) && quorum.is_some()
+            );
+            
             if (timer.is_elapsed() || advance_early) && quorum.is_some() {
                 if !advance_early {
                     warn!(
@@ -328,11 +347,20 @@ impl Dolphin {
                         }
                     });
 
+
+                    debug!(
+                        "Virtual round sync check - current: {}, certificate: {}, advance_early: {}, has_quorum: {}",
+                        self.virtual_round,
+                        virtual_round,
+                        advance_early,
+                        quorum.is_some()
+                    );
+
                     // Round advancement logic
                     if self.virtual_round != virtual_round {
                         continue;
                     }
-                    debug!("Trying to advance round");
+                    debug!("Trying to advance virtual round");
 
                     let (parents, authors): (BTreeSet<_>, Vec<_>) = virtual_state
                         .dag
@@ -351,6 +379,15 @@ impl Dolphin {
                         .sum::<Stake>() >= self.committee.quorum_threshold())
                         .then(|| parents);
                     debug!("Got quorum for round {}: {}", self.virtual_round, quorum.is_some());
+
+                    // todo remove
+                    debug!(
+                        "Quorum status for virtual round {}: has_quorum={}, authors_stake={}, threshold={}",
+                        self.virtual_round,
+                        quorum.is_some(),
+                        authors.iter().map(|x| self.committee.stake(x)).sum::<Stake>(),
+                        self.committee.quorum_threshold()
+                    );
 
                     advance_early = match virtual_round % 2 {
                         0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,

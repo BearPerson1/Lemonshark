@@ -84,7 +84,7 @@ impl QuorumWaiter {
             while let Some(stake) = wait_for_quorum.next().await {
                 total_stake += stake;
                 if total_stake >= self.committee.quorum_threshold() {
-                    // debug!("[QuorumWaiter] Quorum reached, forwarding batch");
+                    debug!("[QuorumWaiter] Quorum reached, forwarding batch");
                     self.tx_batch
                         .send(batch)
                         .await

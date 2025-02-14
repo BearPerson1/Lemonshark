@@ -215,7 +215,7 @@ impl Committer {
                             if cert.header.early_fail
                             {
                                 // add to skip list
-                                debug!("early fail!");
+                                debug!("early fail!  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
                                 state.skipped_certs.insert(cert.clone());
                                 continue;
                             }
@@ -229,6 +229,7 @@ impl Committer {
 
                     if child_count < threshold.into()
                     {
+                        debug!("insufficient votes");
                         continue;
                     }
                     debug!("sufficient votes");
@@ -269,7 +270,7 @@ impl Committer {
                             }
                             else 
                             {
-                                debug!("cross-chain not sufficient");
+                                debug!("cross-chain not sufficient  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
                                 // add to skip list.
                                 state.skipped_certs.insert(cert.clone());
                                 continue;
@@ -284,7 +285,7 @@ impl Committer {
                     }
                     else
                     {
-                        debug!("chain not sufficient");
+                        debug!("chain not sufficient:  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
                         state.skipped_certs.insert(cert.clone());
                         // add to skip list
                     }

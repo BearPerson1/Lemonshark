@@ -210,7 +210,7 @@ class LogParser:
                     latency_value = end - start
                     # print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
                     latency.append(latency_value)
-                    if not print_once and latency_value > 100:
+                    if not print_once and latency_value > 50:
                         print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
                         print_once = True
             # print('-----------------------------------------')  # Delimiter

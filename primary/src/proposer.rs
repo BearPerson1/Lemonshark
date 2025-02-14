@@ -162,17 +162,12 @@ impl Proposer {
     
     async fn make_header(&mut self) {
         // Make a new header.
-        
-
-        
-        
+  
         let shard_num = self.determine_shard_num(self.committee.get_primary_id(&self.name), self.round, self.committee.size() as u64);
         let mut causal_transaction:bool = false;
         let mut causal_transaction_id:u64 = 0;
         let mut collision_fail:bool = false;
 
-
-        
 
         // lemonshark: Check if this is batch contains a casual transaction
         let special_txn_ids: Vec<u64> = self.digests.iter()
@@ -289,10 +284,6 @@ impl Proposer {
             }
         }
         
-
-
-
-        
         //===================
 
         // Send the new header to the `Core` that will broadcast and process it.
@@ -319,6 +310,21 @@ impl Proposer {
             let enough_digests = self.payload_size >= self.header_size;
             let timer_expired = timer.is_elapsed();
             let metadata_ready = !self.metadata.is_empty();
+
+            // todo remove:
+            if enough_parents {
+                debug!(
+                    "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
+                    self.round,
+                    metadata_ready,
+                    enough_digests,
+                    timer_expired,
+                    self.payload_size,
+                    self.header_size
+                );
+            }
+
+
             if (timer_expired || enough_digests) && enough_parents && metadata_ready {
                 // Make a new header.
                 self.make_header().await;
@@ -343,19 +349,32 @@ impl Proposer {
                     self.last_parents = parent_certs.iter().map(|cert| cert.digest()).collect();
                     self.last_parent_certificates = parent_certs;
 
+                    //todo remove
+                    debug!(
+                        "Round advanced to {} - Parents: {}, Metadata Queue Size: {}, Payload Size: {}/{}",
+                        self.round,
+                        self.last_parents.len(),
+                        self.metadata.len(),
+                        self.payload_size,
+                        self.header_size
+                    );
+
                 }
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
                     // //todo: delete
-                    // debug!("=== Received Batch from Worker ===");
-                    // debug!("Worker ID: {}", worker_id);
-                    // debug!("Special Transaction ID: {:?}", special_txn_id);
-                    // debug!("Received Digest: {:?}", digest);
-                    // debug!("Current Payload Size: {} bytes", self.payload_size);
-                    // debug!("Digest Size: {} bytes", digest.size());
-                    // debug!("Current Number of Digests: {}", self.digests.len());
-                    // debug!("===================================");
+                    debug!("=== Received Batch from Worker ===");
+                    debug!("Worker ID: {}", worker_id);
+                    debug!("Special Transaction ID: {:?}", special_txn_id);
+                    debug!("Received Digest: {:?}", digest);
+                    debug!("Current Payload Size: {} bytes", self.payload_size);
+                    debug!("Digest Size: {} bytes", digest.size());
+                    debug!("Current Number of Digests: {}", self.digests.len());
+                   
 
                     self.payload_size += digest.size();
+
+                    debug!("Current payload size:{}",self.payload_size);
+                    debug!("===================================");
                     self.digests.push((digest, worker_id, special_txn_id));
                 }
                 Some(metadata) = self.rx_consensus.recv() => {

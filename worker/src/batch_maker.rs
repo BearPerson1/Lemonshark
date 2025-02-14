@@ -77,6 +77,22 @@ impl BatchMaker {
             tokio::select! {
                 // Assemble client transactions into batches of preset size.
                 Some(transaction) = self.rx_transaction.recv() => {
+                    // todo: delete
+                    if transaction.len() >= 9 {
+                        let tx_type = transaction[0];
+                        let tx_id = u64::from_be_bytes(transaction[1..9].try_into().unwrap_or([0; 8]));
+                        if tx_type == 0
+                        {
+                            debug!("Received sample transaction with ID: {}", tx_id);
+                        }
+                        // match tx_type {
+                        //     0 => debug!("Received sample transaction with ID: {}", tx_id),
+                        //     1 => debug!("Received regular transaction with ID: {}", tx_id),
+                        //     2 => debug!("Received causal transaction with ID: {}", tx_id),
+                        //     _ => debug!("Received unknown transaction type: {}", tx_type),
+                        // }
+                    }
+
                     self.current_batch_size += transaction.len();
                     self.current_batch.push(transaction);
                     if self.current_batch_size >= self.batch_size {
@@ -101,13 +117,13 @@ impl BatchMaker {
 
     /// Seal and broadcast the current batch.
     async fn seal(&mut self) {
-        #[cfg(feature = "benchmark")]
+        
         let size = self.current_batch_size;
 
         // Look for sample txs (they all start with 0) and gather their txs id (the next 8 bytes).
 
         // lemonshark: also 2: our special causal transactions
-        #[cfg(feature = "benchmark")]
+        
         let tx_ids: Vec<(u8, u64)> = self
             .current_batch
             .iter()
@@ -137,7 +153,6 @@ impl BatchMaker {
         debug!("=== Batch Sending Details ===");
         debug!("Number of transactions: {}", batch.len());
         debug!("Special transaction ID: {:?}", special_txn_id);
-        debug!("Worker addresses count: {}", self.workers_addresses.len());
         debug!("Current batch size before clearing: {}", self.current_batch_size);
 
 
