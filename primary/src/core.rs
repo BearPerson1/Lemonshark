@@ -315,23 +315,44 @@ impl Core {
         self.store.write(certificate.digest().to_vec(), bytes).await;
 
         // Check if we have enough certificates to enter a new dag round and propose a header.
+        // Check if we have enough certificates to enter a new dag round and propose a header.
         if let Some(parents) = self
             .certificates_aggregators
             .entry(certificate.round())
             .or_insert_with(|| Box::new(CertificatesAggregator::new()))
             .append(certificate.clone(), &self.committee)
         {
-
             // Lemonshark: Send full certs
             let mut parent_certs = Vec::new();
+            
+            // Debug print header for parent certificates info
+            debug!("=== Parent Certificates for Proposer (Round {}) ===", certificate.round());
             
             for digest in &parents {
                 if let Ok(Some(bytes)) = self.store.read(digest.to_vec()).await {
                     if let Ok(cert) = bincode::deserialize(&bytes) {
+                        let cert: Certificate = cert;
+                        let primary_id = self.committee.get_primary_id(&cert.header.author);
+                        
+                        debug!(
+                            "├─ Certificate from Primary {}: [round: {}, shard: {}, author: {}]",
+                            primary_id,
+                            cert.header.round,
+                            cert.header.shard_num,
+                            cert.header.author
+                        );
+                        
                         parent_certs.push(cert);
                     }
                 }
             }
+
+            debug!(
+                "└─ Summary: Total certificates: {}, Target round: {}",
+                parent_certs.len(),
+                certificate.round()
+            );
+            
             // Send it to the `Proposer`.
             self.tx_proposer
                 .send((parent_certs, certificate.round()))

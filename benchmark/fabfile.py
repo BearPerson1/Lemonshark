@@ -23,14 +23,14 @@ def local(ctx, debug=True):
         'longest_causal_chain':0 # longest chain of causally dependant trans a client will send
     }
     node_params = {
-        'timeout': 1_000,  # ms
+        'timeout': 5_000,  # ms
         'header_size': 1_000,  # bytes
         'max_header_delay': 200,  # ms
         'gc_depth': 50,  # rounds
-        'sync_retry_delay': 200,  # ms
+        'sync_retry_delay': 5000,  # ms
         'sync_retry_nodes': 6,  # number of nodes
         'batch_size': 500_000,  # bytes
-        'max_batch_delay': 100,  # ms
+        'max_batch_delay': 200,  # ms
         'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
         'cross_shard_failure_rate': 1.0, 
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
@@ -99,7 +99,7 @@ def install(ctx):
 
 
 @task
-def remote(ctx, debug=True):
+def remote(ctx, debug=False):
     ''' Run benchmarks on AWS '''
     bench_params = {
         'faults': 0,

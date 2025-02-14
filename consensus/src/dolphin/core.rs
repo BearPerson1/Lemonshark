@@ -145,6 +145,8 @@ impl Dolphin {
         loop {
 
             //// todo: remove
+            
+            
             debug!(
                 "=== Header Proposal Condition Check ===\n\
                  ├─ Timer Status:\n\
@@ -155,7 +157,7 @@ impl Dolphin {
                  │  └─ virtual_round: {}\n\
                  ├─ Quorum Status:\n\
                  │  ├─ has_quorum: {}\n\
-                 │  ├─ quorum_size: {}\n\
+                 │  ├─ total_stake: {}\n\
                  │  └─ threshold: {}\n\
                  └─ Combined Check: (elapsed || advance_early) && has_quorum: {}",
                 timer.is_elapsed(),
@@ -163,11 +165,13 @@ impl Dolphin {
                 advance_early,
                 self.virtual_round,
                 quorum.is_some(),
-                quorum.as_ref().map_or(0, |q: &BTreeSet<(Digest, Round)>| q.len()),
+                virtual_state.dag.get(&self.virtual_round)
+                    .map_or(0, |round_certs| round_certs.values()
+                        .map(|(_, cert)| self.committee.stake(&cert.origin()))
+                        .sum::<Stake>()),
                 self.committee.quorum_threshold(),
                 (timer.is_elapsed() || advance_early) && quorum.is_some()
             );
-
 
             if (timer.is_elapsed() || advance_early) && quorum.is_some() {
                 if !advance_early {
@@ -176,6 +180,12 @@ impl Dolphin {
                         self.virtual_round
                     );
                 }
+
+                // todo remove
+                self.with_state(&state, |state| {
+                    state.print_state(self.committee.get_all_primary_ids());
+                }).await;
+
                 // Advance to the next round.
                 self.virtual_round += 1;
                 debug!("Virtual dag moved to round {}", self.virtual_round);
@@ -296,10 +306,10 @@ impl Dolphin {
                     }
                     // Print debug state
 
-                    self.with_state(&state, |state| {
-                        state.print_state(self.committee.get_all_primary_ids());
-                    }).await;
-                    self.print_shard_last_committed_round();
+                    // self.with_state(&state, |state| {
+                    //     state.print_state(self.committee.get_all_primary_ids());
+                    // }).await;
+                    // self.print_shard_last_committed_round();
 
                     // Early commit processing
                     let state_clone = Arc::clone(&state);
@@ -401,6 +411,29 @@ impl Dolphin {
                         0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
                         _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
                     };
+
+                    // advance_early = match virtual_round % 2 {
+                    //     0 => {
+                    //         let enough = self.enough_votes(virtual_round, &virtual_state);
+                    //         debug!("Even round {} advance_early conditions: enough_votes={}, previous_advance_early={}, result={}",
+                    //             virtual_round, enough, advance_early, enough || !advance_early);
+                    //         enough || !advance_early
+                    //     },
+                    //     _ => {
+                    //         let wave = (virtual_round+1)/2;
+                    //         let steady_leader = virtual_state.steady_leader(wave);
+                    //         debug!("Odd round {} leader check (wave {}): steady_leader={:?}",
+                    //             virtual_round,
+                    //             wave,
+                    //             steady_leader.as_ref().map(|(digest, leader)| 
+                    //                 format!("digest: {:?}, leader: {:?}", digest, leader)
+                    //             ));
+                    //         let result = steady_leader.is_some();
+                    //         debug!("Advance early for odd round {}: {}", virtual_round, result);
+                    //         result
+                    //     }
+                    // };
+
                     debug!("Can early advance for round {}: {}", self.virtual_round, advance_early);
                 },
                 () = &mut timer => {

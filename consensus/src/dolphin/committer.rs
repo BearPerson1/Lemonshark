@@ -46,8 +46,8 @@ impl Committer {
         // Only consider parents with matching shard number
         for (parent_id, parent_shard) in &cert.header.parents_id_shard {
             if *parent_shard == target_shard {
-                debug!("{}├─ Parent (Round {}): Primary {}, Shard {}", 
-                      indent, current_round - 1, parent_id, parent_shard);
+                // debug!("{}├─ Parent (Round {}): Primary {}, Shard {}", 
+                //       indent, current_round - 1, parent_id, parent_shard);
                 
                 // Try to find this parent in the previous round
                 if current_round > 0 {
@@ -164,18 +164,18 @@ impl Committer {
                 for (auth_key, (digest, cert)) in authorities {
                     // Skip if already committed
                     if !state.last_committed.get(auth_key).map_or(true, |last_round| round > last_round) {
-                        debug!("Skipping certificate [round:{} shard:{}] - already committed",cert.header.round,cert.header.shard_num);
+                        // debug!("Skipping certificate [round:{} shard:{}] - already committed",cert.header.round,cert.header.shard_num);
                         continue;
                     }
                     // Skip if already early committed. 
                     if state.early_committed_certs.contains(cert) {
-                        debug!("Skipping certificate [round:{} shard:{}] - already early-committed",cert.header.round,cert.header.shard_num);
+                        // debug!("Skipping certificate [round:{} shard:{}] - already early-committed",cert.header.round,cert.header.shard_num);
                         continue;
                     }
                     // skip if checked previously
                     if state.skipped_certs.contains(cert)
                     {
-                        debug!("Skipping certificate [round:{} shard:{}] - already checked",cert.header.round,cert.header.shard_num);
+                        // debug!("Skipping certificate [round:{} shard:{}] - already checked",cert.header.round,cert.header.shard_num);
 
                         continue;
                     }
@@ -183,7 +183,7 @@ impl Committer {
                     // Skip if cert is in current round
                     if cert.header.round == virtual_round
                     {
-                        debug!("Skipping certificate [round:{} shard:{}] - In same virtual round {} vs {}",cert.header.round,cert.header.shard_num, cert.header.round,virtual_round);
+                        // debug!("Skipping certificate [round:{} shard:{}] - In same virtual round {} vs {}",cert.header.round,cert.header.shard_num, cert.header.round,virtual_round);
                         continue;
                     }
                     // skip if early fail (collision in shard)
@@ -199,15 +199,15 @@ impl Committer {
                                 if cross_cert.header.shard_num == cert.header.cross_shard {
                                     // Found a matching cross-shard cert in the same round
                                     found_matching_cross_shard = true;
-                                    debug!("Found matching cross-shard cert in round {} for shard {}", 
-                                        round, cert.header.cross_shard);
+                                    // debug!("Found matching cross-shard cert in round {} for shard {}", 
+                                    //     round, cert.header.cross_shard);
                                     break;
                                 }
                             }
                         }
                         if !found_matching_cross_shard
                         {
-                            debug!("Cross-shard cert not found");
+                            // debug!("Cross-shard cert not found");
                             continue;
                         }
                         else 
@@ -215,7 +215,7 @@ impl Committer {
                             if cert.header.early_fail
                             {
                                 // add to skip list
-                                debug!("early fail!  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
+                                // debug!("early fail!  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
                                 state.skipped_certs.insert(cert.clone());
                                 continue;
                             }
@@ -224,30 +224,30 @@ impl Committer {
 
                     // skip if already checked
                     
-                    debug!("Checking certificate children for early commit consideration");
+                    // debug!("Checking certificate children for early commit consideration");
                     let (child_count, shard_counts) = self.count_certificate_children(cert, *round, state);
 
                     if child_count < threshold.into()
                     {
-                        debug!("insufficient votes");
+                        // debug!("insufficient votes");
                         continue;
                     }
-                    debug!("sufficient votes");
+                    // debug!("sufficient votes");
 
 
                     let target_shard = cert.header.shard_num;
-                    debug!("\nStarting ancestry trace for certificate:");
-                    debug!("Round {}", round);
-                    debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
-                    debug!("├─ Shard: {}", target_shard);
-                    debug!("└─ Cross-shard: {}, {}",cert.header.cross_shard, cert.header.early_fail);
+                    // debug!("\nStarting ancestry trace for certificate:");
+                    // debug!("Round {}", round);
+                    // debug!("├─ Primary: {:?}", self.committee.get_all_primary_ids().get(auth_key));
+                    // debug!("├─ Shard: {}", target_shard);
+                    // debug!("└─ Cross-shard: {}, {}",cert.header.cross_shard, cert.header.early_fail);
                     // debug!("└─ Ancestry chain (following shard {}):", target_shard);
 
                     // Start the ancestry trace
                     let mut oldest_chain_ancestor_round = self.get_oldest_chain_ancestor(cert, target_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
                 
-                    debug!("The oldest being: {}", oldest_chain_ancestor_round);
-                    debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
+                    // debug!("The oldest being: {}", oldest_chain_ancestor_round);
+                    // debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&target_shard).copied().unwrap_or(0));
 
                     // This is where we do our first check:
                     // If it has the chain. 
@@ -256,21 +256,21 @@ impl Committer {
                         // check if crossshard
                         if cert.header.cross_shard != 0
                         {
-                            debug!("Checking Cross-chain");
+                            // debug!("Checking Cross-chain");
                             let mut oldest_cross_chain_ancestor_round = self.get_oldest_chain_ancestor(cert,cert.header.cross_shard, *round, state, "   ", &self.committee.get_all_primary_ids());
 
-                            debug!("The oldest cross being: {}", oldest_cross_chain_ancestor_round);
-                            debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&cert.header.cross_shard).copied().unwrap_or(0));
+                            // debug!("The oldest cross being: {}", oldest_cross_chain_ancestor_round);
+                            // debug!("last committed round for this shard: {:?}",shard_last_committed_round.get(&cert.header.cross_shard).copied().unwrap_or(0));
 
                             if oldest_cross_chain_ancestor_round - shard_last_committed_round.get(&cert.header.cross_shard).copied().unwrap_or(0) <= 1
                             {
-                                debug!("Sufficient Chain");
+                                // debug!("Sufficient Chain");
                                 // This cert will be early committed., 
                                 sequence.push(cert.clone()); 
                             }
                             else 
                             {
-                                debug!("cross-chain not sufficient  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
+                                // debug!("cross-chain not sufficient  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
                                 // add to skip list.
                                 state.skipped_certs.insert(cert.clone());
                                 continue;
@@ -278,14 +278,14 @@ impl Committer {
                         }
                         else 
                         {
-                            debug!("Sufficient Chain");
+                            // debug!("Sufficient Chain");
                             // This cert will be early committed., 
                             sequence.push(cert.clone()); 
                         }     
                     }
                     else
                     {
-                        debug!("chain not sufficient:  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
+                        // debug!("chain not sufficient:  [primary id:{} round:{} shard:{}]", self.committee.get_primary_id(&cert.header.author), cert.header.round, cert.header.shard_num);
                         state.skipped_certs.insert(cert.clone());
                         // add to skip list
                     }

@@ -312,17 +312,17 @@ impl Proposer {
             let metadata_ready = !self.metadata.is_empty();
 
             // todo remove:
-            if enough_parents {
-                debug!(
-                    "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
-                    self.round,
-                    metadata_ready,
-                    enough_digests,
-                    timer_expired,
-                    self.payload_size,
-                    self.header_size
-                );
-            }
+            // if enough_parents {
+            //     debug!(
+            //         "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
+            //         self.round,
+            //         metadata_ready,
+            //         enough_digests,
+            //         timer_expired,
+            //         self.payload_size,
+            //         self.header_size
+            //     );
+            // }
 
 
             if (timer_expired || enough_digests) && enough_parents && metadata_ready {
@@ -356,6 +356,7 @@ impl Proposer {
 
                     // Check conditions before advancing round
                     let parent_count = self.last_parents.len();
+                    let has_quorum = parent_count >= self.committee.quorum_threshold() as usize;
                                         
                     debug!(
                         "[Pre-Round-Advance] Checking conditions for round {}: metadata_ready={}, parent_count={}, payload_size={}/{}",
@@ -365,6 +366,26 @@ impl Proposer {
                         self.payload_size,
                         self.header_size
                     );
+
+                    // Add some sleep waiting if we have quorum but no metadata
+                    // MIGHT BE BUGGY
+                    if has_quorum && self.metadata.is_empty() {
+                        debug!(
+                            "[Pre-Round-Advance] Has quorum ({}/{}) but no metadata. Starting sleep loop...",
+                            parent_count,
+                            self.committee.quorum_threshold()
+                        );
+                        
+                        while self.metadata.is_empty() {
+                            debug!("Sleeping while waiting for metadata...");
+                            sleep(Duration::from_millis(5)).await; // Sleep for 10ms
+                        }
+                        
+                        debug!(
+                            "[Pre-Round-Advance] Metadata received after sleep. Proceeding with round {}",
+                            self.round
+                        );
+                    }
 
                     // Only proceed with header creation if we have both metadata and parents
                     if !self.metadata.is_empty() && !self.last_parents.is_empty() {
