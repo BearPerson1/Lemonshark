@@ -10,28 +10,28 @@ from benchmark.remote import Bench, BenchError
 
 
 @task
-def local(ctx, debug=True):
+def local(ctx, debug=False):
     ''' Run benchmarks on localhost '''
     bench_params = {
         'faults': 0,
-        'nodes': 20,
+        'nodes': 10,
         'workers': 1,
         'rate': 25_000,
         'tx_size': 512,
-        'duration': 150,
+        'duration': 100,
         'protocol': 'dolphin',
         'longest_causal_chain':0 # longest chain of causally dependant trans a client will send
     }
     node_params = {
         'timeout': 5_000,  # ms
-        'header_size': 1_000,  # bytes
-        'max_header_delay': 200,  # ms
+        'header_size': 50,  # bytes
+        'max_header_delay': 5000,  # ms
         'gc_depth': 50,  # rounds
-        'sync_retry_delay': 5000,  # ms
-        'sync_retry_nodes': 6,  # number of nodes
+        'sync_retry_delay': 10000,  # ms
+        'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
+        'cross_shard_occurance_rate': 1.0, # how often we do cross-shards, this will affect early commit chances
         'cross_shard_failure_rate': 1.0, 
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True # if true, early commits will be communicated to clients. 
@@ -108,7 +108,7 @@ def remote(ctx, debug=False):
         'collocate': True,
         'rate': [20_000],
         'tx_size': 512,
-        'duration': 300,
+        'duration': 150,
         'runs': 1,
         'protocol': 'dolphin',
         'longest_causal_chain': 10
@@ -116,9 +116,9 @@ def remote(ctx, debug=False):
     node_params = {
         'timeout': 5_000,  # ms
         'header_size': 1_000,  # bytes
-        'max_header_delay': 200,  # ms
+        'max_header_delay': 5000,  # ms (impt! dont keep it too low or blocks will be skipped!)
         'gc_depth': 50,  # rounds
-        'sync_retry_delay': 5_000,  # ms
+        'sync_retry_delay': 10_000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms

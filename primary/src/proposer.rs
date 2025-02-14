@@ -312,19 +312,19 @@ impl Proposer {
             let metadata_ready = !self.metadata.is_empty();
 
             // todo remove:
-            // if enough_parents {
-            //     debug!(
-            //         "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
-            //         self.round,
-            //         metadata_ready,
-            //         enough_digests,
-            //         timer_expired,
-            //         self.payload_size,
-            //         self.header_size
-            //     );
-            // }
-
-
+            if enough_parents {
+                debug!(
+                    "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
+                    self.round,
+                    metadata_ready,
+                    enough_digests,
+                    timer_expired,
+                    self.payload_size,
+                    self.header_size
+                );
+            }
+            
+            
             if (timer_expired || enough_digests) && enough_parents && metadata_ready {
                 // Make a new header.
                 self.make_header().await;
@@ -343,56 +343,37 @@ impl Proposer {
 
                     // Print header proposal conditions before advancing round
                     debug!(
-                        "Final header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
+                        "Final header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}, parent_count_in cert={}",
                         self.round,
                         !self.metadata.is_empty(),
                         self.payload_size >= self.header_size,
                         timer.is_elapsed(),
                         self.payload_size,
-                        self.header_size
+                        self.header_size,
+                        parent_certs.len()
                     );
 
-                    // BUG FIX: We need to check if we can propose a header before advancing to the next round. Else blocks might be missing!!
-
-                    // Check conditions before advancing round
-                    let parent_count = self.last_parents.len();
-                    let has_quorum = parent_count >= self.committee.quorum_threshold() as usize;
-                                        
-                    debug!(
-                        "[Pre-Round-Advance] Checking conditions for round {}: metadata_ready={}, parent_count={}, payload_size={}/{}",
-                        self.round,
-                        !self.metadata.is_empty(),
-                        parent_count,
-                        self.payload_size,
-                        self.header_size
-                    );
-
-                    // Add some sleep waiting if we have quorum but no metadata
-                    // MIGHT BE BUGGY
-                    if has_quorum && self.metadata.is_empty() {
+                        // Add detailed parent certificates logging
+                    debug!("=== Parent Certificates Details ===");
+                    for (index, cert) in parent_certs.iter().enumerate() {
                         debug!(
-                            "[Pre-Round-Advance] Has quorum ({}/{}) but no metadata. Starting sleep loop...",
-                            parent_count,
-                            self.committee.quorum_threshold()
-                        );
-                        
-                        while self.metadata.is_empty() {
-                            debug!("Sleeping while waiting for metadata...");
-                            sleep(Duration::from_millis(5)).await; // Sleep for 10ms
-                        }
-                        
-                        debug!(
-                            "[Pre-Round-Advance] Metadata received after sleep. Proceeding with round {}",
-                            self.round
+                            "Parent[{}]: Primary ID: {}, Shard: {}, Round: {}", 
+                            index,
+                            self.committee.get_primary_id(&cert.header.author),
+                            cert.header.shard_num,
+                            cert.header.round
                         );
                     }
+                    debug!("================================");
 
-                    // Only proceed with header creation if we have both metadata and parents
+
+
+                    //bug fix maybe:
                     if !self.metadata.is_empty() && !self.last_parents.is_empty() {
                         debug!(
                             "[Pre-Round-Advance] Proposing header with metadata before advancing to round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
                             round + 1,
-                            parent_count,
+                            self.last_parents.len(),
                             self.payload_size,
                             self.header_size
                         );
@@ -407,28 +388,18 @@ impl Proposer {
                             "[Pre-Round-Advance] Cannot propose header before round {}: metadata_ready={}, parent_count={}",
                             round + 1,
                             !self.metadata.is_empty(),
-                            parent_count
+                            self.last_parents.len()
                         );
                     }
 
-                    // end of bug fix ========================================
-                    // Advance to the next round.
+
+
                     self.round = round + 1;
                     debug!("Dag moved to round {}", self.round);
 
                     // Signal that we have enough parent certificates to propose a new header.
                     self.last_parents = parent_certs.iter().map(|cert| cert.digest()).collect();
                     self.last_parent_certificates = parent_certs;
-
-                    //todo remove
-                    debug!(
-                        "Round advanced to {} - Parents: {}, Metadata Queue Size: {}, Payload Size: {}/{}",
-                        self.round,
-                        self.last_parents.len(),
-                        self.metadata.len(),
-                        self.payload_size,
-                        self.header_size
-                    );
 
                 }
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {

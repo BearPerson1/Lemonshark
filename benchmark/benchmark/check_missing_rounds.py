@@ -63,9 +63,9 @@ def analyze_directory(logs_path: str) -> None:
         rounds, missing_rounds, max_round = analyze_log_file(filepath)
         
         if max_round > 0:  # Only show primaries that have some rounds
-            missing_str = f"{len(missing_rounds)} rounds: {sorted(missing_rounds)[:5]}"
-            if len(missing_rounds) > 5:
-                missing_str += f" ... (+{len(missing_rounds)-5} more)"
+            missing_str = f"{len(missing_rounds)} rounds: {sorted(missing_rounds)[:100]}"
+            if len(missing_rounds) > 100:
+                missing_str += f" ... (+{len(missing_rounds)-100} more)"
                 
             print(f"{primary_num:<10} {max_round:<12} {len(rounds):<15} {missing_str:<40}")
 

@@ -374,86 +374,94 @@ impl Client {
     pub async fn send(&self) -> Result<()> {
         const PRECISION: u64 = 20; // Sample precision.
         const BURST_DURATION: u64 = 1000 / PRECISION;
-
+    
         // Create channel for receiving signals from the message handler
         let (tx_chain, mut rx_chain) = tokio::sync::mpsc::channel::<ChainMessage>(100);
         let handler = ClientMessageHandler::new(
             tx_chain,
             0, //confirmed depth
             self.longest_causal_chain,
-            );
+        );
         Receiver::spawn(self.primary_to_client_addr, handler);
-
-
+    
         // The transaction size must be at least 16 bytes to ensure all txs are different.
         if self.size < 9 {
             return Err(anyhow::Error::msg(
                 "Transaction size must be at least 9 bytes",
             ));
         }
-        // Lemonshark
-        info!("longest_causal_chain: {}",self.longest_causal_chain);   
-
-        // Connect to the mempool.
-        let stream = TcpStream::connect(self.target)
+        
+        info!("longest_causal_chain: {}", self.longest_causal_chain);
+    
+        // Create separate connections for regular and causal transactions
+        let stream_regular = TcpStream::connect(self.target)
             .await
             .context(format!("failed to connect to {}", self.target))?;
+        let stream_causal = TcpStream::connect(self.target)
+            .await
+            .context(format!("failed to connect to {}", self.target))?;
+    
+        let mut transport_regular = Framed::new(stream_regular, LengthDelimitedCodec::new());
+        let transport_causal = Framed::new(stream_causal, LengthDelimitedCodec::new());
+    
+        // Spawn separate task for handling causal chain messages
+        let size = self.size;
+        let longest_causal_chain = self.longest_causal_chain;
+        let causal_handle = tokio::spawn(async move {
+            let mut transport = transport_causal;
+            let mut tx = BytesMut::with_capacity(size);
+    
+            // Send initial causal chain transaction if enabled
+            if longest_causal_chain != 0 {
+                tx.clear();
+                tx.put_u8(2u8);
+                tx.put_u64(1);
+                tx.resize(size, 0u8);
+                let bytes = tx.split().freeze();
+                if let Err(e) = transport.send(bytes).await {
+                    warn!("Failed to send initial causal chain transaction: {}", e);
+                    return;
+                }
+                info!("Sending causal-transaction {}", 1);
 
-        // Submit all transactions.
+                while let Some(chain_message) = rx_chain.recv().await {
+                    if chain_message.should_send && longest_causal_chain != 0 {
+                        tx.clear();
+                        tx.put_u8(2u8);
+                        tx.put_u64(chain_message.counter);
+                        tx.resize(size, 0u8);
+                        let bytes = tx.split().freeze();
+                        if let Err(e) = transport.send(bytes).await {
+                            warn!("Failed to send causal chain transaction: {}", e);
+                            break;
+                        }
+                        info!("Sending causal-transaction {}", chain_message.counter);
+                    }
+                }
+
+            }
+            
+            
+        });
+    
+        // Setup for regular transactions
         let burst = self.rate / PRECISION;
         let mut tx = BytesMut::with_capacity(self.size);
         let mut counter = 0;
         let mut r = rand::thread_rng().gen();
-        let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
         let interval = interval(Duration::from_millis(BURST_DURATION));
         tokio::pin!(interval);
-
-
-        // lemonshark: Send initial causal chain transaction if enabled
-        if self.longest_causal_chain != 0 {
-            tx.clear();
-            tx.put_u8(2u8); // Special transaction type
-            tx.put_u64(1);
-            tx.resize(self.size, 0u8);
-            let bytes = tx.split().freeze();
-            transport.send(bytes).await?;
-            debug!("Sent initial causal chain transaction");
-
-            // NOTE: This log entry is used to compute performance.
-            info!("Sending causal-transaction {}", 1);
-        }
-
-        // NOTE: This log entry is used to compute performance.
+    
         debug!("Start sending transactions");
-
+    
+        // Main loop for regular transactions
         'main: loop {
-            // Lemonshark: Check for message from handler about sending new causal chain transaction
-
-            if let Ok(chain_message) = rx_chain.try_recv() {
-                if chain_message.should_send && self.longest_causal_chain != 0 {
-                    tx.clear();
-                    tx.put_u8(2u8);
-                    tx.put_u64(chain_message.counter);
-                    tx.resize(self.size, 0u8);
-                    let bytes = tx.split().freeze();
-                    if let Err(e) = transport.send(bytes).await {
-                        warn!("Failed to send causal chain transaction: {}", e);
-                        break 'main;
-                    }
-                    info!("Sending causal-transaction {}" , chain_message.counter);
-
-                    continue;
-                }
-            }
-
             interval.as_mut().tick().await;
             let now = Instant::now();
-
+    
             for x in 0..burst {
                 if x == counter % burst {
-                    // NOTE: This log entry is used to compute performance.
                     info!("Sending sample transaction {}", counter);
-
                     tx.put_u8(0u8); // Sample txs start with 0.
                     tx.put_u64(counter); // This counter identifies the tx.
                 } else {
@@ -461,20 +469,24 @@ impl Client {
                     tx.put_u8(1u8); // Standard txs start with 1.
                     tx.put_u64(r); // Ensures all clients send different txs.
                 };
-
+    
                 tx.resize(self.size, 0u8);
                 let bytes = tx.split().freeze();
-                if let Err(e) = transport.send(bytes).await {
+                if let Err(e) = transport_regular.send(bytes).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }
             }
+    
             if now.elapsed().as_millis() > BURST_DURATION as u128 {
-                // NOTE: This log entry is used to compute performance.
                 warn!("Transaction rate too high for this client");
             }
             counter += 1;
         }
+    
+        // Clean up the causal chain task
+        causal_handle.abort();
+    
         Ok(())
     }
 
