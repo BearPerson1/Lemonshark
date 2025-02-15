@@ -54,6 +54,7 @@ pub struct Dolphin {
     causal_transactions_respect_early_finality: bool,
     tx_client: Sender<ClientMessage>,
     name: PublicKey,
+    cert_timeout: u64,
 
 }
 
@@ -81,6 +82,7 @@ impl Dolphin {
         causal_transactions_respect_early_finality: bool,
         tx_client: Sender<ClientMessage>, 
         name: PublicKey,
+        cert_timeout: u64,
     ) {
         tokio::spawn(async move {
             Self {
@@ -101,6 +103,7 @@ impl Dolphin {
                 causal_transactions_respect_early_finality,
                 tx_client,
                 name,
+                cert_timeout,
             }
             .run()
             .await;
@@ -207,12 +210,12 @@ impl Dolphin {
             tokio::select! {
                 Some(certificate) = self.rx_certificate.recv() => {
                     debug!("Processing cert {:?}", certificate);
-                    debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
-                        certificate.header.author,
-                        self.committee.get_primary_id(&certificate.header.author),
-                        certificate.header.round,
-                        certificate.header.shard_num
-                    );
+                    // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                    //     certificate.header.author,
+                    //     self.committee.get_primary_id(&certificate.header.author),
+                    //     certificate.header.round,
+                    //     certificate.header.shard_num
+                    // );
                     let virtual_round = certificate.virtual_round();
 
                     // Add the new certificate to the local storage
@@ -284,12 +287,12 @@ impl Dolphin {
                             state.remove_early_committed_certs(&certificate);
                         }).await;
 
-                        debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
-                            certificate.header.author,
-                            self.committee.get_primary_id(&certificate.header.author),
-                            certificate.header.round,
-                            certificate.header.shard_num
-                        );
+                        // debug!("[extra info:] [name:{} id:{} round:{} shard:{}]",
+                        //     certificate.header.author,
+                        //     self.committee.get_primary_id(&certificate.header.author),
+                        //     certificate.header.round,
+                        //     certificate.header.shard_num
+                        // );
 
                         #[cfg(feature = "benchmark")]
                         for digest in certificate.header.payload.keys() {

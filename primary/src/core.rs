@@ -144,7 +144,7 @@ impl Core {
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
                 cert_timeout,
                 certificate_buffers: HashMap::with_capacity(2 * gc_depth as usize),
-                buffer_check_interval: Duration::from_millis(100), // Check every 25ms
+                buffer_check_interval: Duration::from_millis(50), // Check every 25ms
                 last_buffer_check: Instant::now(),
             }
             .run()
@@ -155,7 +155,8 @@ impl Core {
 
     async fn process_certificate_buffers(&mut self) -> DagResult<()> {
         let now = Instant::now();
-
+        let total_nodes = self.committee.size();  // Get total number of nodes
+    
         // Debug the check interval
         debug!(
             "Time since last buffer check: {:?}, interval: {:?}",
@@ -168,9 +169,9 @@ impl Core {
             return Ok(());
         }
         self.last_buffer_check = now;
-
+    
         debug!("Actually checking certificate buffers");
-            // Debug buffer states
+        // Debug buffer states
         for (round, buffer) in &self.certificate_buffers {
             let time_until_timeout = if buffer.timeout > now {
                 buffer.timeout.duration_since(now)
@@ -179,38 +180,45 @@ impl Core {
             };
             
             debug!(
-                "Buffer round {}: time until timeout: {:?}, certs: {}",
+                "Buffer round {}: time until timeout: {:?}, certs: {}/{} nodes",
                 round,
                 time_until_timeout,
-                buffer.certs.len()
+                buffer.certs.len(),
+                total_nodes
             );
         }
-
+    
         let mut completed_rounds = Vec::new();
         
-        // Find rounds that have timed out
+        // Find rounds that have either timed out OR have all certificates
         for (round, buffer) in &self.certificate_buffers {
-            if now >= buffer.timeout {
+            if now >= buffer.timeout || buffer.certs.len() >= total_nodes {
                 debug!(
-                    "Buffer for round {} has timed out. Current time: {:?}, timeout was: {:?}",
+                    "Buffer for round {} is ready for processing. Reason: {}, Certificates: {}/{}",
                     round,
-                    now,
-                    buffer.timeout
+                    if now >= buffer.timeout { "timeout" } else { "all certificates received" },
+                    buffer.certs.len(),
+                    total_nodes
                 );
                 completed_rounds.push(*round);
             }
         }
-
+    
         // Process completed rounds
         for round in completed_rounds {
             if let Some(buffer) = self.certificate_buffers.remove(&round) {
                 debug!(
-                    "Processing timed out buffer for round {} after {:?}: {} certificates",
+                    "Processing buffer for round {} after {:?}: {} certificates ({})",
                     round,
                     now.duration_since(buffer.last_processed),
-                    buffer.certs.len()
+                    buffer.certs.len(),
+                    if buffer.certs.len() >= total_nodes {
+                        "complete set"
+                    } else {
+                        "timeout triggered"
+                    }
                 );
-
+    
                 let certs: Vec<Certificate> = buffer.certs.into_iter().collect();
                 
                 if !certs.is_empty() {
@@ -231,21 +239,20 @@ impl Core {
                     }
                     
                     debug!(
-                        "└─ Summary: Total certificates: {}, Target round: {}",
+                        "└─ Summary: Total certificates: {}/{}, Target round: {}",
                         certs.len(),
+                        total_nodes,
                         round
                     );
-
+    
                     if let Err(e) = self.tx_proposer.send((certs, round)).await {
                         warn!("Failed to send certificates to proposer: {}", e);
                         return Err(DagError::ProposerSendError(e.to_string()));
                     }
-
-                    
                 }
             }
         }
-
+    
         Ok(())
     }
 

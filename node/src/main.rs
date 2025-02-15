@@ -162,6 +162,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 parameters.causal_transactions_respect_early_finality,
                 tx_client_messages.clone(),
                 keypair.name,
+                parameters.cert_timeout,
             );
 
             Primary::spawn(
