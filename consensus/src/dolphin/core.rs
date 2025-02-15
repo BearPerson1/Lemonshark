@@ -6,11 +6,11 @@ use config::{Committee, Stake};
 use crypto::Hash as _;
 use log::{debug, info, log_enabled, warn};
 use primary::{Certificate, Metadata, Round};
-use std::collections::BTreeSet;
+
+use std::collections::{HashMap, HashSet, BTreeSet};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use crypto::PublicKey;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crypto::Digest;
@@ -176,11 +176,28 @@ impl Dolphin {
                 self.committee.quorum_threshold(),
                 (timer.is_elapsed() || advance_early) && quorum.is_some()
             );
+            
+            let full_quorum = virtual_state.dag
+            .get(&self.virtual_round)
+            .map_or(false, |round_certs| {
+                let participating_nodes = round_certs
+                    .values()
+                    .map(|(_, cert)| cert.origin())
+                    .collect::<HashSet<_>>()
+                    .len();
+                participating_nodes == self.committee.size()
+            });
 
-            if (timer.is_elapsed() || advance_early) && quorum.is_some() {
+            if ((timer.is_elapsed() || advance_early) && quorum.is_some() || full_quorum) {
                 if !advance_early {
                     warn!(
                         "Timing out for round {}, moving to the next round",
+                        self.virtual_round
+                    );
+                }
+                if(full_quorum) {
+                    warn!(
+                        "Full quorum for round {}, moving to the next round",
                         self.virtual_round
                     );
                 }
@@ -411,11 +428,46 @@ impl Dolphin {
                         self.committee.quorum_threshold()
                     );
 
+                    // it sort of makes sense that if theres a leader this round, we might want to have it's cert so we can vote on it. 
+                    // therefore, we might wanna wait abit longer just incase 
                     advance_early = match virtual_round % 2 {
-                        0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
+                        0 => {
+                            let current_wave = virtual_round / 2;
+                            
+                            // Get the steady leader for this wave
+                            let steady_leader = virtual_state.steady_leader(current_wave);
+                    
+                            // Check if we have the steady leader's certificate in our current quorum
+                            let have_leader_cert = if let Some((leader_digest, _)) = steady_leader {
+                                virtual_state
+                                    .dag
+                                    .get(&virtual_round)
+                                    .map(|round_certs| {
+                                        round_certs
+                                            .values()
+                                            .any(|(digest, _)| digest == leader_digest)
+                                    })
+                                    .unwrap_or(false)
+                            } else {
+                                false
+                            };
+                    
+                            if have_leader_cert {
+                                // If we have the steady leader's certificate, advance early
+                                true
+                            } else {
+                                self.enough_votes(virtual_round, &virtual_state) || !advance_early
+                            }
+                        },
                         _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
                     };
-                    debug!("Can early advance for round {}: {}", self.virtual_round, advance_early);
+
+                    // advance_early = match virtual_round % 2 {
+                    //     0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
+                    //     _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
+                    // };
+
+                    debug!("Advance early check for round {}: {}", self.virtual_round, advance_early);
                 },
                 () = &mut timer => {
                     // Nothing to do.
