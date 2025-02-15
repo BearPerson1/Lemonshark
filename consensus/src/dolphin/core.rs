@@ -54,6 +54,7 @@ pub struct Dolphin {
     causal_transactions_respect_early_finality: bool,
     tx_client: Sender<ClientMessage>,
     name: PublicKey,
+
 }
 
 impl Dolphin {
@@ -411,29 +412,6 @@ impl Dolphin {
                         0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
                         _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
                     };
-
-                    // advance_early = match virtual_round % 2 {
-                    //     0 => {
-                    //         let enough = self.enough_votes(virtual_round, &virtual_state);
-                    //         debug!("Even round {} advance_early conditions: enough_votes={}, previous_advance_early={}, result={}",
-                    //             virtual_round, enough, advance_early, enough || !advance_early);
-                    //         enough || !advance_early
-                    //     },
-                    //     _ => {
-                    //         let wave = (virtual_round+1)/2;
-                    //         let steady_leader = virtual_state.steady_leader(wave);
-                    //         debug!("Odd round {} leader check (wave {}): steady_leader={:?}",
-                    //             virtual_round,
-                    //             wave,
-                    //             steady_leader.as_ref().map(|(digest, leader)| 
-                    //                 format!("digest: {:?}, leader: {:?}", digest, leader)
-                    //             ));
-                    //         let result = steady_leader.is_some();
-                    //         debug!("Advance early for odd round {}: {}", virtual_round, result);
-                    //         result
-                    //     }
-                    // };
-
                     debug!("Can early advance for round {}: {}", self.virtual_round, advance_early);
                 },
                 () = &mut timer => {

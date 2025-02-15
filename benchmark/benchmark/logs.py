@@ -222,7 +222,9 @@ class LogParser:
 
     def _end_to_end_latency(self):
         latency = []
-        print_once = False
+        # Create a list to store all transaction details
+        transaction_details = []
+        
         for sent, received in zip(self.sent_samples, self.received_samples):
             for tx_id, batch_id in received.items():
                 if batch_id in self.commits:
@@ -231,9 +233,26 @@ class LogParser:
                     end = self.commits[batch_id]
                     latency_value = end - start
                     latency.append(latency_value)
-                    if not print_once and latency_value > 4:
-                        print(f"Batch ID: {batch_id}, Latency: {latency_value} seconds")
-                        print_once = True
+
+                    # Store transaction details
+                    transaction_details.append({
+                        'tx_number': tx_id,
+                        'batch_id': batch_id,
+                        'latency': latency_value
+                    })
+
+        # Sort transaction details by transaction number
+        transaction_details.sort(key=lambda x: x['tx_number'])
+
+        # Write to file
+        with open('transaction_details.txt', 'w') as f:
+            # Write header
+            f.write(f"{'Txn Number':<12} | {'Batch ID':<40} | {'Latency (s)':<10}\n")
+            f.write("-" * 65 + "\n")
+            
+            # Write data
+            for detail in transaction_details:
+                f.write(f"{detail['tx_number']:<12} | {detail['batch_id']:<40} | {detail['latency']:.4f}\n")
 
         if latency:
             latency_array = np.array(latency)
@@ -415,7 +434,6 @@ class LogParser:
         for filename in sorted(glob(join(directory, 'worker-*.log'))):
             with open(filename, 'r') as f:
                 workers += [f.read()]
-
         return cls(clients, primaries, workers, faults=faults)
 
 

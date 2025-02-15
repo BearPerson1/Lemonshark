@@ -172,6 +172,7 @@ impl Primary {
             /* rx_proposer */ rx_headers,
             /* rx_consensus */ tx_output,
             /* tx_proposer */ tx_parents,
+            parameters.cert_timeout,
         );
 
         // Keeps track of the latest consensus round and allows other tasks to clean up their their internal state

@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
+use std::time::{Duration, Instant};
+
 
 #[cfg(test)]
 #[path = "tests/core_tests.rs"]
@@ -69,9 +71,34 @@ pub struct Core {
 
     
     // Stuff for lemonshark: 
-
+    cert_timeout: u64,
+    certificate_buffers: HashMap<Round, CertificateBuffer>,
+    buffer_check_interval: Duration,  // How often to check buffers
+    last_buffer_check: Instant,       // When did we last check buffers
 
 }
+
+
+#[derive(Debug)]
+pub struct CertificateBuffer {
+    round: Round,
+    certs: HashSet<Certificate>,
+    timeout: Instant,
+    last_processed: Instant,  // Track when we last processed this buffer
+}
+
+impl From<tokio::sync::mpsc::error::SendError<(Vec<Certificate>, Round)>> for DagError {
+    fn from(e: tokio::sync::mpsc::error::SendError<(Vec<Certificate>, Round)>) -> Self {
+        DagError::ProposerSendError(e.to_string())
+    }
+}
+
+impl From<tokio::sync::mpsc::error::SendError<Certificate>> for DagError {
+    fn from(e: tokio::sync::mpsc::error::SendError<Certificate>) -> Self {
+        DagError::ConsensusSendError(e.to_string())
+    }
+}
+
 
 impl Core {
     #[allow(clippy::too_many_arguments)]
@@ -89,6 +116,7 @@ impl Core {
         rx_proposer: Receiver<Header>,
         tx_consensus: Sender<Certificate>,
         tx_proposer: Sender<(Vec<Certificate>, Round)>,
+        cert_timeout: u64,
         
     ) {
         tokio::spawn(async move {
@@ -114,11 +142,117 @@ impl Core {
                 certificates_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
                 network: ReliableSender::new(),
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
-                
+                cert_timeout,
+                certificate_buffers: HashMap::with_capacity(2 * gc_depth as usize),
+                buffer_check_interval: Duration::from_millis(100), // Check every 25ms
+                last_buffer_check: Instant::now(),
             }
             .run()
             .await;
         });
+    }
+
+
+    async fn process_certificate_buffers(&mut self) -> DagResult<()> {
+        let now = Instant::now();
+
+        // Debug the check interval
+        debug!(
+            "Time since last buffer check: {:?}, interval: {:?}",
+            now.duration_since(self.last_buffer_check),
+            self.buffer_check_interval
+        );
+        
+        // Only check buffers periodically to avoid excessive processing
+        if now.duration_since(self.last_buffer_check) < self.buffer_check_interval {
+            return Ok(());
+        }
+        self.last_buffer_check = now;
+
+        debug!("Actually checking certificate buffers");
+            // Debug buffer states
+        for (round, buffer) in &self.certificate_buffers {
+            let time_until_timeout = if buffer.timeout > now {
+                buffer.timeout.duration_since(now)
+            } else {
+                Duration::from_secs(0)
+            };
+            
+            debug!(
+                "Buffer round {}: time until timeout: {:?}, certs: {}",
+                round,
+                time_until_timeout,
+                buffer.certs.len()
+            );
+        }
+
+        let mut completed_rounds = Vec::new();
+        
+        // Find rounds that have timed out
+        for (round, buffer) in &self.certificate_buffers {
+            if now >= buffer.timeout {
+                debug!(
+                    "Buffer for round {} has timed out. Current time: {:?}, timeout was: {:?}",
+                    round,
+                    now,
+                    buffer.timeout
+                );
+                completed_rounds.push(*round);
+            }
+        }
+
+        // Process completed rounds
+        for round in completed_rounds {
+            if let Some(buffer) = self.certificate_buffers.remove(&round) {
+                debug!(
+                    "Processing timed out buffer for round {} after {:?}: {} certificates",
+                    round,
+                    now.duration_since(buffer.last_processed),
+                    buffer.certs.len()
+                );
+
+                let certs: Vec<Certificate> = buffer.certs.into_iter().collect();
+                
+                if !certs.is_empty() {
+                    debug!(
+                        "=== Sending Buffered Certificates for Round {} ===",
+                        round
+                    );
+                    
+                    for cert in &certs {
+                        let primary_id = self.committee.get_primary_id(&cert.header.author);
+                        debug!(
+                            "├─ Certificate from Primary {}: [round: {}, shard: {}, author: {}]",
+                            primary_id,
+                            cert.header.round,
+                            cert.header.shard_num,
+                            cert.header.author
+                        );
+                    }
+                    
+                    debug!(
+                        "└─ Summary: Total certificates: {}, Target round: {}",
+                        certs.len(),
+                        round
+                    );
+
+                    if let Err(e) = self.tx_proposer.send((certs, round)).await {
+                        warn!("Failed to send certificates to proposer: {}", e);
+                        return Err(DagError::ProposerSendError(e.to_string()));
+                    }
+
+                    debug!("Cleaning up data structures for round {}", round);
+                    self.last_voted.remove(&round);
+                    self.processing.remove(&round);
+                    self.certificates_aggregators.remove(&round);
+                    self.cancel_handlers.remove(&round);
+                    debug!("Completed cleanup for round {}", round);
+                    
+                }
+            }
+        }
+
+        Ok(())
     }
 
     async fn process_own_header(&mut self, header: Header) -> DagResult<()> {
@@ -285,21 +419,17 @@ impl Core {
     #[async_recursion]
     async fn process_certificate(&mut self, certificate: Certificate) -> DagResult<()> {
         debug!("Processing cert {:?}", certificate);
-        // Process the header embedded in the certificate if we haven't already voted for it (if we already
-        // voted, it means we already processed it). Since this header got certified, we are sure that all
-        // the data it refers to (ie. its payload and its parents) are available. We can thus continue the
-        // processing of the certificate even if we don't have them in store right now.
+
+        // Process the header embedded in the certificate if we haven't already voted for it
         if !self
             .processing
             .get(&certificate.header.round)
             .map_or_else(|| false, |x| x.contains(&certificate.header.id))
         {
-            // This function may still throw an error if the storage fails.
             self.process_header(&certificate.header).await?;
         }
 
-        // Ensure we have all the ancestors of this certificate yet (if we didn't already garbage collect them).
-        // If we don't, the synchronizer will gather them and trigger re-processing of this certificate.
+        // Ensure we have all ancestors (if we didn't already garbage collect them)
         if certificate.round() > self.gc_round + 1
             && !self.synchronizer.deliver_certificate(&certificate).await?
         {
@@ -310,67 +440,105 @@ impl Core {
             return Ok(());
         }
 
-        // Store the certificate.
+        // Store the certificate
         let bytes = bincode::serialize(&certificate).expect("Failed to serialize certificate");
         self.store.write(certificate.digest().to_vec(), bytes).await;
 
-        // Check if we have enough certificates to enter a new dag round and propose a header.
-        // Check if we have enough certificates to enter a new dag round and propose a header.
+
+        let cert_round = certificate.round();
+        if let Some(buffer) = self.certificate_buffers.get_mut(&cert_round) {
+            if buffer.certs.insert(certificate.clone()) {
+                debug!(
+                    "Added received certificate to existing buffer - Round: {}, Author: {}, Buffer size: {}",
+                    cert_round,
+                    certificate.header.author,
+                    buffer.certs.len()
+                );
+            }
+        }
+
+        // Check if we have enough certificates to enter a new dag round
         if let Some(parents) = self
             .certificates_aggregators
             .entry(certificate.round())
             .or_insert_with(|| Box::new(CertificatesAggregator::new()))
             .append(certificate.clone(), &self.committee)
         {
-            // Lemonshark: Send full certs
-            let mut parent_certs = Vec::new();
             
-            // Debug print header for parent certificates info
-            debug!("=== Parent Certificates for Proposer (Round {}) ===", certificate.round());
+            let cert_round = certificate.round();
+            // Create timeout duration outside the closure
+            let timeout_duration = Duration::from_millis(self.cert_timeout);
             
+            debug!(
+                "=== Creating/Updating Buffer for Round {} ===", 
+                cert_round
+            );
+            debug!(
+                "Certificate buffers before update: {:?}", 
+                self.certificate_buffers.keys().collect::<Vec<_>>()
+            );
+
+                // Get the buffer and directly work with it
+            let buffer = self.certificate_buffers
+            .entry(cert_round)
+            .or_insert_with(|| {
+                let now = Instant::now();
+                debug!(
+                    "Creating new buffer for round {} with timeout in {:?}",
+                    cert_round,
+                    timeout_duration
+                );
+                CertificateBuffer {
+                    round: cert_round,
+                    certs: HashSet::new(),
+                    timeout: now + timeout_duration,
+                    last_processed: now,
+                }
+            });
+
+
+            // Process certificates directly into the buffer
+            let mut certs_added = 0;
             for digest in &parents {
                 if let Ok(Some(bytes)) = self.store.read(digest.to_vec()).await {
                     if let Ok(cert) = bincode::deserialize(&bytes) {
                         let cert: Certificate = cert;
-                        let primary_id = self.committee.get_primary_id(&cert.header.author);
-                        
-                        debug!(
-                            "├─ Certificate from Primary {}: [round: {}, shard: {}, author: {}]",
-                            primary_id,
-                            cert.header.round,
-                            cert.header.shard_num,
-                            cert.header.author
-                        );
-                        
-                        parent_certs.push(cert);
+                        if buffer.certs.insert(cert) {
+                            certs_added += 1;
+                        }
                     }
                 }
             }
 
             debug!(
-                "└─ Summary: Total certificates: {}, Target round: {}",
-                parent_certs.len(),
-                certificate.round()
+                "Added {} new certificates to buffer for round {}. Total certs: {}",
+                certs_added,
+                cert_round,
+                buffer.certs.len()
             );
             
-            // Send it to the `Proposer`.
-            self.tx_proposer
-                .send((parent_certs, certificate.round()))
-                .await
-                .expect("Failed to send certificates");
+            debug!(
+                "Certificate buffers after update: {:?}", 
+                self.certificate_buffers.keys().collect::<Vec<_>>()
+            );
         }
 
-        // Send it to the consensus layer.
-        // Note: This is where the consensus/src/... consensus primary is called. 
+        // Process any timed out buffers
+        self.process_certificate_buffers().await?;
+
+        // Send certificate to consensus layer
         let id = certificate.header.id.clone();
         if let Err(e) = self.tx_consensus.send(certificate).await {
             warn!(
                 "Failed to deliver certificate {} to the consensus: {}",
                 id, e
             );
+            return Err(DagError::ConsensusSendError(e.to_string()));
         }
+        
         Ok(())
     }
+
 
     fn sanitize_header(&mut self, header: &Header) -> DagResult<()> {
         //ensure!(
@@ -418,9 +586,17 @@ impl Core {
 
     // Main loop listening to incoming messages.
     pub async fn run(&mut self) {
+        let mut buffer_check_timer = tokio::time::interval(self.buffer_check_interval);
+
 
         loop {
             let result = tokio::select! {
+
+                _ = buffer_check_timer.tick() => {
+                    debug!("Timer triggered buffer check");
+                    self.process_certificate_buffers().await
+                },
+
                 // We receive here messages from other primaries.
                 Some(message) = self.rx_primaries.recv() => {
                     match message {
@@ -465,6 +641,12 @@ impl Core {
                     error!("{}", e);
                     panic!("Storage failure: killing node.");
                 }
+                Err(DagError::ProposerSendError(e)) => {
+                    warn!("Failed to send to proposer: {}", e);
+                }
+                Err(DagError::ConsensusSendError(e)) => {
+                    warn!("Failed to send to consensus: {}", e);
+                }
                 Err(e @ DagError::TooOld(..)) => debug!("{}", e),
                 Err(e) => warn!("{}", e),
             }
@@ -473,11 +655,15 @@ impl Core {
             let round = self.consensus_round.load(Ordering::Relaxed);
             if round > self.gc_depth {
                 let gc_round = round - self.gc_depth;
+                
+
+
                 self.last_voted.retain(|k, _| k > &gc_round);
                 self.processing.retain(|k, _| k > &gc_round);
                 self.certificates_aggregators.retain(|k, _| k > &gc_round);
                 self.cancel_handlers.retain(|k, _| k > &gc_round);
                 self.gc_round = gc_round;
+                
             }
         }
     }

@@ -374,15 +374,67 @@ impl Client {
     pub async fn send(&self) -> Result<()> {
         const PRECISION: u64 = 20; // Sample precision.
         const BURST_DURATION: u64 = 1000 / PRECISION;
-    
+        info!("longest_causal_chain: {}", self.longest_causal_chain);
+
+        let mut causal_handle = None;
         // Create channel for receiving signals from the message handler
-        let (tx_chain, mut rx_chain) = tokio::sync::mpsc::channel::<ChainMessage>(100);
-        let handler = ClientMessageHandler::new(
-            tx_chain,
-            0, //confirmed depth
-            self.longest_causal_chain,
-        );
-        Receiver::spawn(self.primary_to_client_addr, handler);
+
+        if self.longest_causal_chain  != 0
+        {
+            let (tx_chain, mut rx_chain) = tokio::sync::mpsc::channel::<ChainMessage>(100);
+            let handler = ClientMessageHandler::new(
+                tx_chain,
+                0, //confirmed depth
+                self.longest_causal_chain,
+            );
+            Receiver::spawn(self.primary_to_client_addr, handler);
+
+            let stream_causal = TcpStream::connect(self.target)
+            .await
+            .context(format!("failed to connect to {}", self.target))?;
+            
+            let transport_causal = Framed::new(stream_causal, LengthDelimitedCodec::new());
+
+
+                    // Spawn separate task for handling causal chain messages
+            let size = self.size;
+            let longest_causal_chain = self.longest_causal_chain;
+            causal_handle = Some(tokio::spawn(async move {
+                let mut transport = transport_causal;
+                let mut tx = BytesMut::with_capacity(size);
+
+                // Send initial causal chain transaction if enabled
+                if longest_causal_chain != 0 {
+                    tx.clear();
+                    tx.put_u8(2u8);
+                    tx.put_u64(1);
+                    tx.resize(size, 0u8);
+                    let bytes = tx.split().freeze();
+                    if let Err(e) = transport.send(bytes).await {
+                        warn!("Failed to send initial causal chain transaction: {}", e);
+                        return;
+                    }
+                    info!("Sending causal-transaction {}", 1);
+
+                    while let Some(chain_message) = rx_chain.recv().await {
+                        if chain_message.should_send && longest_causal_chain != 0 {
+                            tx.clear();
+                            tx.put_u8(2u8);
+                            tx.put_u64(chain_message.counter);
+                            tx.resize(size, 0u8);
+                            let bytes = tx.split().freeze();
+                            if let Err(e) = transport.send(bytes).await {
+                                warn!("Failed to send causal chain transaction: {}", e);
+                                break;
+                            }
+                            info!("Sending causal-transaction {}", chain_message.counter);
+                        }
+                    }
+                }
+                }));
+            }
+        
+
     
         // The transaction size must be at least 16 bytes to ensure all txs are different.
         if self.size < 9 {
@@ -391,58 +443,17 @@ impl Client {
             ));
         }
         
-        info!("longest_causal_chain: {}", self.longest_causal_chain);
+       
     
         // Create separate connections for regular and causal transactions
         let stream_regular = TcpStream::connect(self.target)
             .await
             .context(format!("failed to connect to {}", self.target))?;
-        let stream_causal = TcpStream::connect(self.target)
-            .await
-            .context(format!("failed to connect to {}", self.target))?;
-    
+
         let mut transport_regular = Framed::new(stream_regular, LengthDelimitedCodec::new());
-        let transport_causal = Framed::new(stream_causal, LengthDelimitedCodec::new());
+        
     
-        // Spawn separate task for handling causal chain messages
-        let size = self.size;
-        let longest_causal_chain = self.longest_causal_chain;
-        let causal_handle = tokio::spawn(async move {
-            let mut transport = transport_causal;
-            let mut tx = BytesMut::with_capacity(size);
-    
-            // Send initial causal chain transaction if enabled
-            if longest_causal_chain != 0 {
-                tx.clear();
-                tx.put_u8(2u8);
-                tx.put_u64(1);
-                tx.resize(size, 0u8);
-                let bytes = tx.split().freeze();
-                if let Err(e) = transport.send(bytes).await {
-                    warn!("Failed to send initial causal chain transaction: {}", e);
-                    return;
-                }
-                info!("Sending causal-transaction {}", 1);
 
-                while let Some(chain_message) = rx_chain.recv().await {
-                    if chain_message.should_send && longest_causal_chain != 0 {
-                        tx.clear();
-                        tx.put_u8(2u8);
-                        tx.put_u64(chain_message.counter);
-                        tx.resize(size, 0u8);
-                        let bytes = tx.split().freeze();
-                        if let Err(e) = transport.send(bytes).await {
-                            warn!("Failed to send causal chain transaction: {}", e);
-                            break;
-                        }
-                        info!("Sending causal-transaction {}", chain_message.counter);
-                    }
-                }
-
-            }
-            
-            
-        });
     
         // Setup for regular transactions
         let burst = self.rate / PRECISION;
@@ -483,9 +494,15 @@ impl Client {
             }
             counter += 1;
         }
-    
+
         // Clean up the causal chain task
-        causal_handle.abort();
+        if let Some(handle) = causal_handle {
+            handle.abort();
+            match handle.await {
+                Ok(_) => debug!("Causal chain task cleaned up successfully"),
+                Err(e) => warn!("Causal chain task cleanup error: {:?}", e),
+            }
+        }
     
         Ok(())
     }

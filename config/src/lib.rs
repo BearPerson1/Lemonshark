@@ -79,13 +79,15 @@ pub struct Parameters {
     /// The delay after which the workers seal a batch of transactions, even if `max_batch_size`
     /// is not reached. Denominated in ms.
     pub max_batch_delay: u64,
-    #[cfg(feature = "dolphin")]
+
     /// The leader timeout value. Denominated in ms.
     pub timeout: u64,
+
     pub cross_shard_occurance_rate: f64,
     pub cross_shard_failure_rate: f64,
     pub causal_transactions_collision_rate: f64,
     pub causal_transactions_respect_early_finality: bool, 
+    pub cert_timeout: u64,
 }
 
 impl Default for Parameters {
@@ -98,12 +100,12 @@ impl Default for Parameters {
             sync_retry_nodes: 3,
             batch_size: 500_000,
             max_batch_delay: 100,
-            #[cfg(feature = "dolphin")]
             timeout: 5_000,
             cross_shard_failure_rate : 0.0,
             cross_shard_occurance_rate : 0.0,
             causal_transactions_collision_rate: 0.0,
             causal_transactions_respect_early_finality: true, 
+            cert_timeout: 5000,
         }
     }
 }
@@ -119,12 +121,13 @@ impl Parameters {
         info!("Sync retry nodes set to {} nodes", self.sync_retry_nodes);
         info!("Batch size set to {} B", self.batch_size);
         info!("Max batch delay set to {} ms", self.max_batch_delay);
-        #[cfg(feature = "dolphin")]
+
         info!("Leader timeout set to {} ms", self.timeout);
         info!("Cross-shard occurrence rate set to {:.2}%", self.cross_shard_occurance_rate * 100.0);
         info!("Cross-shard failure rate set to {:.2}%", self.cross_shard_failure_rate * 100.0);
         info!("Causally dependent transaction collision rate set to {:.2}%", self.causal_transactions_collision_rate * 100.0);
         info!("Causal transactions respect early finality: {}", self.causal_transactions_respect_early_finality);
+        info!("Certificate timeout set to {} ms", self.cert_timeout);
         
     }
 }

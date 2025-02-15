@@ -369,7 +369,7 @@ impl Proposer {
 
 
                     //bug fix maybe:
-                    if !self.metadata.is_empty() && !self.last_parents.is_empty() {
+                    if !self.last_parents.is_empty() {
                         debug!(
                             "[Pre-Round-Advance] Proposing header with metadata for round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
                             round ,

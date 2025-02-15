@@ -59,4 +59,10 @@ pub enum DagError {
 
     #[error("Vote {0} (round {1}) too old")]
     VoteTooOld(Digest, Round),
+
+    #[error("Failed to send certificates to proposer: {0}")]
+    ProposerSendError(String),
+
+    #[error("Failed to send certificate to consensus: {0}")]
+    ConsensusSendError(String),
 }
