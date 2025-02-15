@@ -241,12 +241,6 @@ impl Core {
                         return Err(DagError::ProposerSendError(e.to_string()));
                     }
 
-                    debug!("Cleaning up data structures for round {}", round);
-                    self.last_voted.remove(&round);
-                    self.processing.remove(&round);
-                    self.certificates_aggregators.remove(&round);
-                    self.cancel_handlers.remove(&round);
-                    debug!("Completed cleanup for round {}", round);
                     
                 }
             }
@@ -256,7 +250,13 @@ impl Core {
     }
 
     async fn process_own_header(&mut self, header: Header) -> DagResult<()> {
-
+        debug!("=== Processing Own Header ===");
+        debug!(
+            "Header details - Round: {}, Author: {}, ID: {}",
+            header.round,
+            header.author,
+            header.id
+        );
         // Reset the votes aggregator.
         self.current_header = header.clone();
         self.votes_aggregator = VotesAggregator::new();
@@ -276,8 +276,29 @@ impl Core {
             .or_insert_with(Vec::new)
             .extend(handlers);
 
-        // Process the header.
-        self.process_header(&header).await
+
+
+            // Before creating our own vote
+         debug!(
+                "Checking last_voted state for round {} before voting:",
+                header.round
+            );
+            if let Some(voted) = self.last_voted.get(&header.round) {
+                debug!(
+                    "Already voted authors for round {}: {:?}",
+                    header.round,
+                    voted
+                );
+            }
+
+            // Process the header.
+            match self.process_header(&header).await {
+                Ok(_) => debug!("Successfully processed own header"),
+                Err(e) => debug!("Error processing own header: {:?}", e),
+            }
+            Ok(())
+    
+
     }
 
     #[async_recursion]
@@ -350,6 +371,23 @@ impl Core {
             return Ok(());
         }
 
+        debug!(
+            "=== Vote Creation Check ===\nHeader Round: {}\nHeader Author: {}\nHeader ID: {}\nOur Name: {}",
+            header.round,
+            header.author,
+            header.id,
+            self.name
+        );
+ 
+        if let Some(voted) = self.last_voted.get(&header.round) {
+            debug!(
+                "Current voted authors for round {}: {:?}",
+                header.round,
+                voted
+            );
+        }
+
+
         // Check if we can vote for this header.
         if self
             .last_voted
@@ -357,9 +395,21 @@ impl Core {
             .or_insert_with(HashSet::new)
             .insert(header.author)
         {
+            debug!(
+                "Creating vote for header - Author {} was not in last_voted set for round {}",
+                header.author,
+                header.round
+            );
             // Make a vote and send it to the header's creator.
             let vote = Vote::new(header, &self.name, &mut self.signature_service).await;
             debug!("Created {:?}", vote);
+            debug!(
+                "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
+                vote.origin,
+                vote.author,
+                vote.round,
+                vote.id
+            );
             if vote.origin == self.name {
                 self.process_vote(vote)
                     .await
@@ -385,7 +435,21 @@ impl Core {
     #[async_recursion]
     async fn process_vote(&mut self, vote: Vote) -> DagResult<()> {
         debug!("Processing vote {:?}", vote);
+        debug!(
+            "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
+            vote.origin,
+            vote.author,
+            vote.round,
+            vote.id
+        );
 
+        debug!(
+            "Current header state:\n Round: {}\n Author: {}\n ID: {}",
+            self.current_header.round,
+            self.current_header.author,
+            self.current_header.id
+        );
+        
         // Add it to the votes' aggregator and try to make a new certificate.
         if let Some(certificate) =
             self.votes_aggregator
@@ -420,6 +484,27 @@ impl Core {
     async fn process_certificate(&mut self, certificate: Certificate) -> DagResult<()> {
         debug!("Processing cert {:?}", certificate);
 
+        
+
+        // debug!("=== Certificate Voting Details ===");
+        // debug!(
+        //     "Certificate for round {} from author {} (Primary ID: {})",
+        //     certificate.round(),
+        //     certificate.header.author,
+        //     self.committee.get_primary_id(&certificate.header.author)
+        // );
+        // debug!("Votes from the following primaries:");
+        // for (pk, _sig) in &certificate.votes {
+        //     debug!(
+        //         "├─ Primary ID: {} (Author: {})",
+        //         self.committee.get_primary_id(pk),
+        //         pk
+        //     );
+        // }
+        // debug!("Total vote count: {}", certificate.votes.len());
+        // debug!("===============================");
+
+        
         // Process the header embedded in the certificate if we haven't already voted for it
         if !self
             .processing
@@ -634,6 +719,8 @@ impl Core {
 
                 // We also receive here our new headers created by the `Proposer`.
                 Some(header) = self.rx_proposer.recv() => self.process_own_header(header).await,
+
+                
             };
             match result {
                 Ok(()) | Err(DagError::VoteTooOld(..)) => (),
@@ -663,7 +750,7 @@ impl Core {
                 self.certificates_aggregators.retain(|k, _| k > &gc_round);
                 self.cancel_handlers.retain(|k, _| k > &gc_round);
                 self.gc_round = gc_round;
-                
+                self.certificate_buffers.retain(|k, _| k > &gc_round);
             }
         }
     }

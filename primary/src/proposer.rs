@@ -311,18 +311,18 @@ impl Proposer {
             let timer_expired = timer.is_elapsed();
             let metadata_ready = !self.metadata.is_empty();
 
-            // todo remove:
-            if enough_parents {
-                debug!(
-                    "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
-                    self.round,
-                    metadata_ready,
-                    enough_digests,
-                    timer_expired,
-                    self.payload_size,
-                    self.header_size
-                );
-            }
+            // // todo remove:
+            // if enough_parents {
+            //     debug!(
+            //         "Header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}",
+            //         self.round,
+            //         metadata_ready,
+            //         enough_digests,
+            //         timer_expired,
+            //         self.payload_size,
+            //         self.header_size
+            //     );
+            // }
             
             
             if (timer_expired || enough_digests) && enough_parents && metadata_ready {

@@ -23,7 +23,7 @@ impl PayloadReceiver {
 
     async fn run(&mut self) {
         while let Some((digest, worker_id)) = self.rx_workers.recv().await {
-            debug!("Received payload from worker {} with digest {:?}", worker_id, digest);
+           //debug!("Received payload from worker {} with digest {:?}", worker_id, digest);
             let key = [digest.as_ref(), &worker_id.to_le_bytes()].concat();
             self.store.write(key.to_vec(), Vec::default()).await;
         }
