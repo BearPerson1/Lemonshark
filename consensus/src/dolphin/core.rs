@@ -55,6 +55,7 @@ pub struct Dolphin {
     tx_client: Sender<ClientMessage>,
     name: PublicKey,
     cert_timeout: u64,
+    cert_timer:Option<Instant>,
 
 }
 
@@ -104,6 +105,7 @@ impl Dolphin {
                 tx_client,
                 name,
                 cert_timeout,
+                cert_timer: None,
             }
             .run()
             .await;
@@ -146,36 +148,27 @@ impl Dolphin {
         let mut quorum = Some(self.genesis.iter().map(|x| (x.digest(), 0)).collect());
         let mut advance_early = true;
 
+        let select_timer_timeout = 25;
+        let select_timer = sleep(Duration::from_millis(select_timer_timeout));
+        tokio::pin!(select_timer);
+
         loop {
 
-            //// todo: remove
-            
-            
-            debug!(
-                "=== Header Proposal Condition Check ===\n\
-                 ├─ Timer Status:\n\
-                 │  ├─ Elapsed: {}\n\
-                 │  └─ Max Delay: {} ms\n\
-                 ├─ Advance Status:\n\
-                 │  ├─ advance_early: {}\n\
-                 │  └─ virtual_round: {}\n\
-                 ├─ Quorum Status:\n\
-                 │  ├─ has_quorum: {}\n\
-                 │  ├─ total_stake: {}\n\
-                 │  └─ threshold: {}\n\
-                 └─ Combined Check: (elapsed || advance_early) && has_quorum: {}",
-                timer.is_elapsed(),
-                self.timeout,
-                advance_early,
-                self.virtual_round,
-                quorum.is_some(),
-                virtual_state.dag.get(&self.virtual_round)
-                    .map_or(0, |round_certs| round_certs.values()
-                        .map(|(_, cert)| self.committee.stake(&cert.origin()))
-                        .sum::<Stake>()),
-                self.committee.quorum_threshold(),
-                (timer.is_elapsed() || advance_early) && quorum.is_some()
-            );
+            // create timer
+            if quorum.is_some() && self.cert_timer.is_none() {
+                self.cert_timer = Some(Instant::now());
+                debug!(
+                    "Starting certificate timeout timer for round {}",
+                    self.virtual_round
+                );
+            }
+
+            // Check if cert timeout has expired
+            // Why? Leader timeout applies only if not early advance. 
+            // in early advance, we wanna wait abit so we can get more stuff, to prevent missed consensus. 
+            let cert_timeout_expired = self.cert_timer
+            .map(|start_time| start_time.elapsed() >= Duration::from_millis(self.cert_timeout))
+            .unwrap_or(false);
             
             let full_quorum = virtual_state.dag
             .get(&self.virtual_round)
@@ -188,7 +181,46 @@ impl Dolphin {
                 participating_nodes == self.committee.size()
             });
 
-            if ((timer.is_elapsed() || advance_early) && quorum.is_some() || full_quorum) {
+            //// todo: remove
+            debug!(
+                "=== Header Proposal Condition Check ===\n\
+                 ├─ Timer Status:\n\
+                 │  ├─ Elapsed: {}\n\
+                 │  └─ Max Delay: {} ms\n\
+                 ├─ Certificate Timer Status:\n\
+                 │  ├─ Started: {}\n\
+                 │  ├─ Expired: {}\n\
+                 │  └─ Timeout: {} ms\n\
+                 ├─ Advance Status:\n\
+                 │  ├─ advance_early: {}\n\
+                 │  └─ virtual_round: {}\n\
+                 ├─ Quorum Status:\n\
+                 │  ├─ has_quorum: {}\n\
+                 │  ├─ total_stake: {}\n\
+                 │  └─ threshold: {}\n\
+                 └─ Combined Check: ((elapsed || advance_early) && (has_quorum && cert_timeout_expired) || full_quorum): {}",
+                timer.is_elapsed(),
+                self.timeout,
+                self.cert_timer.is_some(),
+                cert_timeout_expired,
+                self.cert_timeout,
+                advance_early,
+                self.virtual_round,
+                quorum.is_some(),
+                virtual_state.dag.get(&self.virtual_round)
+                    .map_or(0, |round_certs| round_certs.values()
+                        .map(|(_, cert)| self.committee.stake(&cert.origin()))
+                        .sum::<Stake>()),
+                self.committee.quorum_threshold(),
+                ((timer.is_elapsed() || advance_early) && (quorum.is_some() && cert_timeout_expired) || full_quorum)
+            );
+            
+
+ 
+
+
+
+            if ((timer.is_elapsed() || advance_early) && (quorum.is_some() && cert_timeout_expired) || full_quorum) {
                 if !advance_early {
                     warn!(
                         "Timing out for round {}, moving to the next round",
@@ -202,7 +234,9 @@ impl Dolphin {
                     );
                 }
 
-                // todo remove
+
+
+                // todo remove DEBUG
                 self.with_state(&state, |state| {
                     state.print_state(self.committee.get_all_primary_ids());
                 }).await;
@@ -212,7 +246,10 @@ impl Dolphin {
                 debug!("Virtual dag moved to round {}", self.virtual_round);
                 // Send the virtual parents to the primary's proposer.
 
-            self.tx_core
+                // Reset the cert timer when advancing rounds
+                self.cert_timer = None;
+
+                self.tx_core
                 .send( Metadata::new(self.virtual_round, quorum.unwrap()))
                 .await
                 .expect("Failed to send metadata to primary core");
@@ -470,8 +507,9 @@ impl Dolphin {
 
                     debug!("Advance early check for round {}: {}", self.virtual_round, advance_early);
                 },
-                () = &mut timer => {
-                    // Nothing to do.
+                () = &mut select_timer => {
+                    // Reset select timer
+                      select_timer.as_mut().reset(Instant::now() + Duration::from_millis(select_timer_timeout));
                 }
             }
         }

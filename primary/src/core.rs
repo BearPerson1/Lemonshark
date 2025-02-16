@@ -85,7 +85,6 @@ pub struct Core {
 pub struct CertificateBuffer {
     round: Round,
     certs: HashSet<Certificate>,
-    timeout: Instant,
     last_processed: Instant,  // Track when we last processed this buffer
     metadata: Option<Metadata>, 
 }
@@ -160,109 +159,79 @@ impl Core {
 
     async fn process_certificate_buffers(&mut self) -> DagResult<()> {
         let now = Instant::now();
-        let total_nodes = self.committee.size();  // Get total number of nodes
-    
-        // Debug the check interval
-        debug!(
-            "Time since last buffer check: {:?}, interval: {:?}",
-            now.duration_since(self.last_buffer_check),
-            self.buffer_check_interval
-        );
-        
-        // Only check buffers periodically to avoid excessive processing
-        if now.duration_since(self.last_buffer_check) < self.buffer_check_interval {
-            return Ok(());
-        }
-        self.last_buffer_check = now;
+        let quorum = self.committee.quorum_threshold() as usize;
     
         debug!("Actually checking certificate buffers");
         // Debug buffer states
         for (round, buffer) in &self.certificate_buffers {
-            let time_until_timeout = if buffer.timeout > now {
-                buffer.timeout.duration_since(now)
-            } else {
-                Duration::from_secs(0)
-            };
-            
             debug!(
-                "Buffer round {}: time until timeout: {:?}, certs: {}/{} nodes",
+                "Buffer round {}: certs: {}/{} (quorum: {})",
                 round,
-                time_until_timeout,
                 buffer.certs.len(),
-                total_nodes
+                self.committee.size(),
+                quorum
             );
         }
     
         let mut completed_rounds = Vec::new();
         
-        // Find rounds that meet BOTH conditions:
-        // 1. Has metadata AND
-        // 2. (Has timed out OR has all certificates)
+        // Find rounds that have metadata AND enough certs for quorum
         for (round, buffer) in &self.certificate_buffers {
-            let has_all_certs = buffer.certs.len() >= total_nodes;
-            let is_timeout = now >= buffer.timeout;
+            let has_quorum = buffer.certs.len() >= quorum;
             let has_metadata = buffer.metadata.is_some();
-
-            // Only process if we have metadata AND (timeout OR all certs)
-            if has_metadata && (is_timeout || has_all_certs) {
+    
+            // Only process if we have metadata AND quorum of certs
+            if has_metadata && has_quorum {
                 debug!(
                     "Buffer for round {} is ready for processing.\n\
                     ├─ Has metadata: {}\n\
-                    ├─ Timeout reached: {}\n\
-                    ├─ Has all certs: {} ({}/{})\n\
-                    └─ Processing reason: {}",
+                    ├─ Has quorum: {} ({}/{} needed)\n\
+                    └─ Processing reason: quorum of certificates received",
                     round,
                     has_metadata,
-                    is_timeout,
-                    has_all_certs,
+                    has_quorum,
                     buffer.certs.len(),
-                    total_nodes,
-                    if is_timeout { "timeout" } else { "all certificates received" }
+                    quorum
                 );
                 completed_rounds.push(*round);
             } else {
                 debug!(
                     "Buffer for round {} not ready.\n\
                     ├─ Has metadata: {}\n\
-                    ├─ Timeout reached: {}\n\
-                    ├─ Has all certs: {} ({}/{})\n\
+                    ├─ Has quorum: {} ({}/{} needed)\n\
                     └─ Status: waiting for {}",
                     round,
                     has_metadata,
-                    is_timeout,
-                    has_all_certs,
+                    has_quorum,
                     buffer.certs.len(),
-                    total_nodes,
+                    quorum,
                     if !has_metadata {
                         "metadata"
-                    } else if !has_all_certs && !is_timeout {
-                        "timeout or more certificates"
                     } else {
-                        "unknown condition"
+                        "more certificates"
                     }
                 );
             }
         }
-
     
         // Process completed rounds
         for round in completed_rounds {
-            if let Some(buffer) = self.certificate_buffers.remove(&round) {
+            if let Some(buffer) = self.certificate_buffers.remove(&round) {  // This line handles the removal/GC
                 // We know metadata exists because of our check above
                 let metadata = buffer.metadata.unwrap();
                 debug!(
-                    "Processing buffer for round {} after {:?}:\n\
-                    ├─ Certificates: {}/{}\n\
+                    "Processing buffer for round {}:\n\
+                    ├─ Certificates: {}/{} (quorum: {})\n\
                     ├─ Metadata virtual round: {}\n\
                     └─ Time since last processed: {:?}",
                     round,
-                    now.duration_since(buffer.timeout),
                     buffer.certs.len(),
-                    total_nodes,
+                    self.committee.size(),
+                    quorum,
                     metadata.virtual_round,
                     now.duration_since(buffer.last_processed)
                 );
-
+    
                 let certs: Vec<Certificate> = buffer.certs.into_iter().collect();
                 
                 if !certs.is_empty() {
@@ -273,15 +242,15 @@ impl Core {
                         round,
                         metadata.virtual_round,
                         certs.len(),
-                        total_nodes
+                        quorum
                     );
-
+    
                     // First send metadata
                     if let Err(e) = self.tx_proposer.send(ProposerMessage::Metadata(metadata)).await {
                         warn!("Failed to send metadata to proposer: {}", e);
                         return Err(DagError::ProposerSendError(e.to_string()));
                     }
-
+    
                     // Then send certificates
                     if let Err(e) = self.tx_proposer
                         .send(ProposerMessage::Certificates(certs, round))
@@ -296,6 +265,80 @@ impl Core {
     
         Ok(())
     }
+    
+    #[async_recursion]
+    async fn process_certificate(&mut self, certificate: Certificate) -> DagResult<()> {
+        debug!("Processing cert {:?}", certificate);
+        
+        // Process the header embedded in the certificate if we haven't already voted for it
+        if !self
+            .processing
+            .get(&certificate.header.round)
+            .map_or_else(|| false, |x| x.contains(&certificate.header.id))
+        {
+            self.process_header(&certificate.header).await?;
+        }
+    
+        // Ensure we have all ancestors (if we didn't already garbage collect them)
+        if certificate.round() > self.gc_round + 1
+            && !self.synchronizer.deliver_certificate(&certificate).await?
+        {
+            debug!(
+                "Processing of {:?} suspended: missing ancestors",
+                certificate
+            );
+            return Ok(());
+        }
+    
+        // Store the certificate
+        let bytes = bincode::serialize(&certificate).expect("Failed to serialize certificate");
+        self.store.write(certificate.digest().to_vec(), bytes).await;
+    
+        let cert_round = certificate.round();
+        
+        // Get or create buffer and add certificate
+        let buffer = self.certificate_buffers
+            .entry(cert_round)
+            .or_insert_with(|| {
+                let now = Instant::now();
+                debug!(
+                    "Creating new buffer for round {}",
+                    cert_round
+                );
+                CertificateBuffer {
+                    round: cert_round,
+                    certs: HashSet::new(),
+                    last_processed: now,
+                    metadata: None,
+                }
+            });
+    
+        // Add certificate to buffer
+        if buffer.certs.insert(certificate.clone()) {
+            debug!(
+                "Added certificate to buffer - Round: {}, Author: {}, Buffer size: {}",
+                cert_round,
+                certificate.header.author,
+                buffer.certs.len()
+            );
+        }
+    
+        // Process any completed buffers
+        self.process_certificate_buffers().await?;
+    
+        // Send certificate to consensus layer
+        let id = certificate.header.id.clone();
+        if let Err(e) = self.tx_consensus.send(certificate).await {
+            warn!(
+                "Failed to deliver certificate {} to the consensus: {}",
+                id, e
+            );
+            return Err(DagError::ConsensusSendError(e.to_string()));
+        }
+        
+        Ok(())
+    }
+
 
     async fn process_own_header(&mut self, header: Header) -> DagResult<()> {
         debug!("=== Processing Own Header ===");
@@ -528,151 +571,7 @@ impl Core {
         Ok(())
     }
 
-    #[async_recursion]
-    async fn process_certificate(&mut self, certificate: Certificate) -> DagResult<()> {
-        debug!("Processing cert {:?}", certificate);
-
-        
-
-        // debug!("=== Certificate Voting Details ===");
-        // debug!(
-        //     "Certificate for round {} from author {} (Primary ID: {})",
-        //     certificate.round(),
-        //     certificate.header.author,
-        //     self.committee.get_primary_id(&certificate.header.author)
-        // );
-        // debug!("Votes from the following primaries:");
-        // for (pk, _sig) in &certificate.votes {
-        //     debug!(
-        //         "├─ Primary ID: {} (Author: {})",
-        //         self.committee.get_primary_id(pk),
-        //         pk
-        //     );
-        // }
-        // debug!("Total vote count: {}", certificate.votes.len());
-        // debug!("===============================");
-
-        
-        // Process the header embedded in the certificate if we haven't already voted for it
-        if !self
-            .processing
-            .get(&certificate.header.round)
-            .map_or_else(|| false, |x| x.contains(&certificate.header.id))
-        {
-            self.process_header(&certificate.header).await?;
-        }
-
-        // Ensure we have all ancestors (if we didn't already garbage collect them)
-        if certificate.round() > self.gc_round + 1
-            && !self.synchronizer.deliver_certificate(&certificate).await?
-        {
-            debug!(
-                "Processing of {:?} suspended: missing ancestors",
-                certificate
-            );
-            return Ok(());
-        }
-
-        // Store the certificate
-        let bytes = bincode::serialize(&certificate).expect("Failed to serialize certificate");
-        self.store.write(certificate.digest().to_vec(), bytes).await;
-
-
-        let cert_round = certificate.round();
-        if let Some(buffer) = self.certificate_buffers.get_mut(&cert_round) {
-            if buffer.certs.insert(certificate.clone()) {
-                debug!(
-                    "Added received certificate to existing buffer - Round: {}, Author: {}, Buffer size: {}",
-                    cert_round,
-                    certificate.header.author,
-                    buffer.certs.len()
-                );
-            }
-        }
-
-        // Check if we have enough certificates to enter a new dag round
-        if let Some(parents) = self
-            .certificates_aggregators
-            .entry(certificate.round())
-            .or_insert_with(|| Box::new(CertificatesAggregator::new()))
-            .append(certificate.clone(), &self.committee)
-        {
-            
-            let cert_round = certificate.round();
-            // Create timeout duration outside the closure
-            let timeout_duration = Duration::from_millis(self.cert_timeout);
-            
-            debug!(
-                "=== Creating/Updating Buffer for Round {} ===", 
-                cert_round
-            );
-            debug!(
-                "Certificate buffers before update: {:?}", 
-                self.certificate_buffers.keys().collect::<Vec<_>>()
-            );
-
-                // Get the buffer and directly work with it
-            let buffer = self.certificate_buffers
-            .entry(cert_round)
-            .or_insert_with(|| {
-                let now = Instant::now();
-                debug!(
-                    "Creating new buffer for round {} with timeout in {:?}",
-                    cert_round,
-                    timeout_duration
-                );
-                CertificateBuffer {
-                    round: cert_round,
-                    certs: HashSet::new(),
-                    timeout: now + timeout_duration,
-                    last_processed: now,
-                    metadata: None,
-                }
-            });
-
-
-            // Process certificates directly into the buffer
-            let mut certs_added = 0;
-            for digest in &parents {
-                if let Ok(Some(bytes)) = self.store.read(digest.to_vec()).await {
-                    if let Ok(cert) = bincode::deserialize(&bytes) {
-                        let cert: Certificate = cert;
-                        if buffer.certs.insert(cert) {
-                            certs_added += 1;
-                        }
-                    }
-                }
-            }
-
-            debug!(
-                "Added {} new certificates to buffer for round {}. Total certs: {}",
-                certs_added,
-                cert_round,
-                buffer.certs.len()
-            );
-            
-            debug!(
-                "Certificate buffers after update: {:?}", 
-                self.certificate_buffers.keys().collect::<Vec<_>>()
-            );
-        }
-
-        // Process any timed out buffers
-        self.process_certificate_buffers().await?;
-
-        // Send certificate to consensus layer
-        let id = certificate.header.id.clone();
-        if let Err(e) = self.tx_consensus.send(certificate).await {
-            warn!(
-                "Failed to deliver certificate {} to the consensus: {}",
-                id, e
-            );
-            return Err(DagError::ConsensusSendError(e.to_string()));
-        }
-        
-        Ok(())
-    }
-
+ 
 
     fn sanitize_header(&mut self, header: &Header) -> DagResult<()> {
         //ensure!(
@@ -790,7 +689,6 @@ impl Core {
                                 CertificateBuffer {
                                     round,
                                     certs: HashSet::new(),
-                                    timeout: now + timeout_duration, // Use pre-calculated duration
                                     last_processed: now,
                                     metadata: None,
                                 }
