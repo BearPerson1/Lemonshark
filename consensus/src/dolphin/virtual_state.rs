@@ -140,6 +140,7 @@ impl VirtualState {
     }
 
     /// Print the mode and latest waves of each authority.
+    /// these are based off the last cert of those nodes?
     pub fn print_status(&self, certificate: &Certificate) {
         let mut seen = HashSet::new();
         let steady_wave = (certificate.virtual_round() + 1) / 2;
