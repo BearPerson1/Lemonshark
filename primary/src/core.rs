@@ -1,10 +1,11 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::aggregators::{CertificatesAggregator, VotesAggregator};
 use crate::error::{DagError, DagResult};
-use crate::messages::{Certificate, Header, Vote};
+use crate::messages::{Certificate, Header, Vote,ProposerMessage,Metadata};
 use crate::primary::{PrimaryMessage, Round};
 use crate::synchronizer::Synchronizer;
 use async_recursion::async_recursion;
+use bincode::de;
 use bytes::Bytes;
 use config::Committee;
 use crypto::Hash as _;
@@ -50,7 +51,7 @@ pub struct Core {
     /// Output all certificates to the consensus layer.
     tx_consensus: Sender<Certificate>,
     /// Send valid a quorum of certificates' ids to the `Proposer` (along with their round).
-    tx_proposer: Sender<(Vec<Certificate>, Round)>,
+    tx_proposer: Sender<ProposerMessage>,
 
     /// The last garbage collected round.
     gc_round: Round,
@@ -75,6 +76,7 @@ pub struct Core {
     certificate_buffers: HashMap<Round, CertificateBuffer>,
     buffer_check_interval: Duration,  // How often to check buffers
     last_buffer_check: Instant,       // When did we last check buffers
+    rx_metadata: Receiver<Metadata>,
 
 }
 
@@ -85,6 +87,7 @@ pub struct CertificateBuffer {
     certs: HashSet<Certificate>,
     timeout: Instant,
     last_processed: Instant,  // Track when we last processed this buffer
+    metadata: Option<Metadata>, 
 }
 
 impl From<tokio::sync::mpsc::error::SendError<(Vec<Certificate>, Round)>> for DagError {
@@ -115,8 +118,9 @@ impl Core {
         rx_certificate_waiter: Receiver<Certificate>,
         rx_proposer: Receiver<Header>,
         tx_consensus: Sender<Certificate>,
-        tx_proposer: Sender<(Vec<Certificate>, Round)>,
+        tx_proposer: Sender<ProposerMessage>,
         cert_timeout: u64,
+        rx_metadata: Receiver<Metadata>
         
     ) {
         tokio::spawn(async move {
@@ -146,6 +150,7 @@ impl Core {
                 certificate_buffers: HashMap::with_capacity(2 * gc_depth as usize),
                 buffer_check_interval: Duration::from_millis(50), // Check every 25ms
                 last_buffer_check: Instant::now(),
+                rx_metadata,
             }
             .run()
             .await;
@@ -190,62 +195,98 @@ impl Core {
     
         let mut completed_rounds = Vec::new();
         
-        // Find rounds that have either timed out OR have all certificates
+        // Find rounds that meet BOTH conditions:
+        // 1. Has metadata AND
+        // 2. (Has timed out OR has all certificates)
         for (round, buffer) in &self.certificate_buffers {
-            if now >= buffer.timeout || buffer.certs.len() >= total_nodes {
+            let has_all_certs = buffer.certs.len() >= total_nodes;
+            let is_timeout = now >= buffer.timeout;
+            let has_metadata = buffer.metadata.is_some();
+
+            // Only process if we have metadata AND (timeout OR all certs)
+            if has_metadata && (is_timeout || has_all_certs) {
                 debug!(
-                    "Buffer for round {} is ready for processing. Reason: {}, Certificates: {}/{}",
+                    "Buffer for round {} is ready for processing.\n\
+                    ├─ Has metadata: {}\n\
+                    ├─ Timeout reached: {}\n\
+                    ├─ Has all certs: {} ({}/{})\n\
+                    └─ Processing reason: {}",
                     round,
-                    if now >= buffer.timeout { "timeout" } else { "all certificates received" },
+                    has_metadata,
+                    is_timeout,
+                    has_all_certs,
                     buffer.certs.len(),
-                    total_nodes
+                    total_nodes,
+                    if is_timeout { "timeout" } else { "all certificates received" }
                 );
                 completed_rounds.push(*round);
+            } else {
+                debug!(
+                    "Buffer for round {} not ready.\n\
+                    ├─ Has metadata: {}\n\
+                    ├─ Timeout reached: {}\n\
+                    ├─ Has all certs: {} ({}/{})\n\
+                    └─ Status: waiting for {}",
+                    round,
+                    has_metadata,
+                    is_timeout,
+                    has_all_certs,
+                    buffer.certs.len(),
+                    total_nodes,
+                    if !has_metadata {
+                        "metadata"
+                    } else if !has_all_certs && !is_timeout {
+                        "timeout or more certificates"
+                    } else {
+                        "unknown condition"
+                    }
+                );
             }
         }
+
     
         // Process completed rounds
         for round in completed_rounds {
             if let Some(buffer) = self.certificate_buffers.remove(&round) {
+                // We know metadata exists because of our check above
+                let metadata = buffer.metadata.unwrap();
                 debug!(
-                    "Processing buffer for round {} after {:?}: {} certificates ({})",
+                    "Processing buffer for round {} after {:?}:\n\
+                    ├─ Certificates: {}/{}\n\
+                    ├─ Metadata virtual round: {}\n\
+                    └─ Time since last processed: {:?}",
                     round,
-                    now.duration_since(buffer.last_processed),
+                    now.duration_since(buffer.timeout),
                     buffer.certs.len(),
-                    if buffer.certs.len() >= total_nodes {
-                        "complete set"
-                    } else {
-                        "timeout triggered"
-                    }
+                    total_nodes,
+                    metadata.virtual_round,
+                    now.duration_since(buffer.last_processed)
                 );
-    
+
                 let certs: Vec<Certificate> = buffer.certs.into_iter().collect();
                 
                 if !certs.is_empty() {
                     debug!(
-                        "=== Sending Buffered Certificates for Round {} ===",
-                        round
-                    );
-                    
-                    for cert in &certs {
-                        let primary_id = self.committee.get_primary_id(&cert.header.author);
-                        debug!(
-                            "├─ Certificate from Primary {}: [round: {}, shard: {}, author: {}]",
-                            primary_id,
-                            cert.header.round,
-                            cert.header.shard_num,
-                            cert.header.author
-                        );
-                    }
-                    
-                    debug!(
-                        "└─ Summary: Total certificates: {}/{}, Target round: {}",
+                        "=== Sending Buffered Data for Round {} ===\n\
+                        ├─ Metadata virtual round: {}\n\
+                        └─ Certificates: {}/{}",
+                        round,
+                        metadata.virtual_round,
                         certs.len(),
-                        total_nodes,
-                        round
+                        total_nodes
                     );
-    
-                    if let Err(e) = self.tx_proposer.send((certs, round)).await {
+
+                    // First send metadata
+                    if let Err(e) = self.tx_proposer.send(ProposerMessage::Metadata(metadata)).await {
+                        warn!("Failed to send metadata to proposer: {}", e);
+                        return Err(DagError::ProposerSendError(e.to_string()));
+                    }
+
+                    // Then send certificates
+                    if let Err(e) = self.tx_proposer
+                        .send(ProposerMessage::Certificates(certs, round))
+                        .await 
+                    {
                         warn!("Failed to send certificates to proposer: {}", e);
                         return Err(DagError::ProposerSendError(e.to_string()));
                     }
@@ -585,6 +626,7 @@ impl Core {
                     certs: HashSet::new(),
                     timeout: now + timeout_duration,
                     last_processed: now,
+                    metadata: None,
                 }
             });
 
@@ -714,6 +756,57 @@ impl Core {
                         _ => panic!("Unexpected core message")
                     }
                 },
+
+                // We receive here metadata from the consensus layer.
+                Some(metadata) = self.rx_metadata.recv() => {
+                    debug!(
+                        "Received metadata from consensus for virtual round {}",
+                        metadata.virtual_round
+                    );
+                    
+                    let round = metadata.virtual_round-1;
+
+                    if round == 0
+                    {
+                        debug!("round 1");
+                        match self.tx_proposer.send(ProposerMessage::Metadata(metadata)).await {
+                            Ok(_) => Ok(()),
+                            Err(e) => Err(DagError::ProposerSendError(e.to_string()))
+                        }
+                    }
+                    else 
+                    {
+                        let now = Instant::now();
+                        let timeout_duration = Duration::from_millis(self.cert_timeout);
+                        
+                        // Get or create buffer for this round
+                        let buffer = self.certificate_buffers
+                            .entry(round)
+                            .or_insert_with(|| {
+                                debug!(
+                                    "Creating new buffer for round {} while processing metadata",
+                                    round
+                                );
+                                CertificateBuffer {
+                                    round,
+                                    certs: HashSet::new(),
+                                    timeout: now + timeout_duration, // Use pre-calculated duration
+                                    last_processed: now,
+                                    metadata: None,
+                                }
+                            });
+                        
+                        // Update metadata in buffer
+                        buffer.metadata = Some(metadata.clone());
+                        debug!(
+                            "Updated buffer for round {} with metadata containing {} parents",
+                            round,
+                            metadata.virtual_parents.len()
+                        );
+                        // Try processing buffers since we have new metadata
+                        self.process_certificate_buffers().await
+                    }
+                }
 
                 // We receive here loopback headers from the `HeaderWaiter`. Those are headers for which we interrupted
                 // execution (we were missing some of their dependencies) and we are now ready to resume processing.

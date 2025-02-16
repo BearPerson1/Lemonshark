@@ -1,6 +1,6 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::messages::Metadata;
-use crate::messages::{Certificate, Header};
+use crate::messages::{Certificate, Header, ProposerMessage};
 use crate::primary::Round;
 use config::{Committee, WorkerId};
 use crypto::Hash as _;
@@ -32,13 +32,13 @@ pub struct Proposer {
     max_header_delay: u64,
 
     /// Receives the parents to include in the next header (along with their round number).
-    rx_core: Receiver<(Vec<Certificate>, Round)>,
+    rx_core: Receiver<ProposerMessage>,
     /// Receives the batches' digests from our workers.
     rx_workers: Receiver<(Digest, WorkerId,Option<u64>)>,
     /// Sends newly created headers to the `Core`.
     tx_core: Sender<Header>,
     /// The current consensus round.
-    rx_consensus: Receiver<Metadata>,
+    //rx_consensus: Receiver<Metadata>,
 
     /// The current round of the dag.
     round: Round,
@@ -60,6 +60,8 @@ pub struct Proposer {
     tx_client: Sender<ClientMessage>,
 }
 
+
+
 impl Proposer {
     #[allow(clippy::too_many_arguments)]
     pub fn spawn(
@@ -68,10 +70,10 @@ impl Proposer {
         signature_service: SignatureService,
         header_size: usize,
         max_header_delay: u64,
-        rx_core: Receiver<(Vec<Certificate>, Round)>,
+        rx_core: Receiver<ProposerMessage>,
         rx_workers: Receiver<(Digest, WorkerId, Option<u64>)>,  
         tx_core: Sender<Header>,
-        rx_consensus: Receiver<Metadata>,
+        //rx_consensus: Receiver<Metadata>,
         cross_shard_occurance_rate: f64,
         cross_shard_failure_rate: f64,
         causal_transactions_collision_rate: f64,
@@ -93,7 +95,7 @@ impl Proposer {
                 rx_core,
                 rx_workers,
                 tx_core,
-                rx_consensus,
+                //rx_consensus,
                 round: 1,
                 last_parents: genesis,
                 digests: Vec::with_capacity(2 * header_size),
@@ -336,72 +338,80 @@ impl Proposer {
             }
 
             tokio::select! {
-                Some((parent_certs, round)) = self.rx_core.recv() => {
-                    if round < self.round {
-                        continue;
+
+                Some(message) = self.rx_core.recv() => {
+                    match message {
+                        ProposerMessage::Certificates(parent_certs, round) => {
+                            if round < self.round {
+                                continue;
+                            }
+
+                            // Print header proposal conditions before advancing round
+                            debug!(
+                                "Final header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}, parent_count_in cert={}",
+                                self.round,
+                                !self.metadata.is_empty(),
+                                self.payload_size >= self.header_size,
+                                timer.is_elapsed(),
+                                self.payload_size,
+                                self.header_size,
+                                parent_certs.len()
+                            );
+
+                            // Add detailed parent certificates logging
+                            debug!("=== Parent Certificates Details ===");
+                            for (index, cert) in parent_certs.iter().enumerate() {
+                                debug!(
+                                    "Parent[{}]: Primary ID: {}, Shard: {}, Round: {}", 
+                                    index,
+                                    self.committee.get_primary_id(&cert.header.author),
+                                    cert.header.shard_num,
+                                    cert.header.round
+                                );
+                            }
+                            debug!("================================");
+                            //bug fix maybe???
+                            if !self.metadata.is_empty() && !self.last_parents.is_empty() {
+                                debug!(
+                                    "[Pre-Round-Advance] Proposing header with metadata for round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
+                                    round ,
+                                    self.last_parents.len(),
+                                    self.payload_size,
+                                    self.header_size
+                                );
+
+                                // Make a header with current round before advancing
+                                self.make_header().await;
+                                self.payload_size = 0;
+
+                                debug!("Successfully proposed pre-round-advance header for round {}", self.round);
+                            } else {
+                                debug!(
+                                    "[Pre-Round-Advance] Cannot propose header for round {}: metadata_ready={}, parent_count={}",
+                                    round,
+                                    !self.metadata.is_empty(),
+                                    self.last_parents.len()
+                                );
+                            }
+                            self.round = round + 1;
+                            debug!("Dag moved to round {}", self.round);
+
+                            // Signal that we have enough parent certificates to propose a new header.
+                            self.last_parents = parent_certs.iter().map(|cert| cert.digest()).collect();
+                            self.last_parent_certificates = parent_certs;
+                        }
+                        ProposerMessage::Metadata(metadata) => {
+                            self.metadata.push_front(metadata);
+                        }
                     }
-
-                    // Print header proposal conditions before advancing round
-                    debug!(
-                        "Final header proposal conditions for round {}: metadata_ready={}, enough_digests={}, timer_expired={}, payload_size={}/{}, parent_count_in cert={}",
-                        self.round,
-                        !self.metadata.is_empty(),
-                        self.payload_size >= self.header_size,
-                        timer.is_elapsed(),
-                        self.payload_size,
-                        self.header_size,
-                        parent_certs.len()
-                    );
-
-                        // Add detailed parent certificates logging
-                    debug!("=== Parent Certificates Details ===");
-                    for (index, cert) in parent_certs.iter().enumerate() {
-                        debug!(
-                            "Parent[{}]: Primary ID: {}, Shard: {}, Round: {}", 
-                            index,
-                            self.committee.get_primary_id(&cert.header.author),
-                            cert.header.shard_num,
-                            cert.header.round
-                        );
-                    }
-                    debug!("================================");
-
-
-
-                    //bug fix maybe???
-                    if !self.metadata.is_empty() && !self.last_parents.is_empty() {
-                        debug!(
-                            "[Pre-Round-Advance] Proposing header with metadata for round {}. All conditions met: metadata_ready=true, parent_count={}, payload_size={}/{}",
-                            round ,
-                            self.last_parents.len(),
-                            self.payload_size,
-                            self.header_size
-                        );
-
-                        // Make a header with current round before advancing
-                        self.make_header().await;
-                        self.payload_size = 0;
-
-                        debug!("Successfully proposed pre-round-advance header for round {}", self.round);
-                    } else {
-                        debug!(
-                            "[Pre-Round-Advance] Cannot propose header for round {}: metadata_ready={}, parent_count={}",
-                            round,
-                            !self.metadata.is_empty(),
-                            self.last_parents.len()
-                        );
-                    }
-
-
-
-                    self.round = round + 1;
-                    debug!("Dag moved to round {}", self.round);
-
-                    // Signal that we have enough parent certificates to propose a new header.
-                    self.last_parents = parent_certs.iter().map(|cert| cert.digest()).collect();
-                    self.last_parent_certificates = parent_certs;
-
                 }
+
+
+
+
+
+
+                
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
                     // //todo: delete
 
@@ -420,9 +430,7 @@ impl Proposer {
                     // debug!("===================================");
                     self.digests.push((digest, worker_id, special_txn_id));
                 }
-                Some(metadata) = self.rx_consensus.recv() => {
-                    self.metadata.push_front(metadata);
-                }
+
                 () = &mut timer => {
                     // Nothing to do.
                 }

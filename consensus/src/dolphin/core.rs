@@ -31,8 +31,8 @@ pub struct Dolphin {
     rx_certificate: Receiver<Certificate>,
     /// Outputs the sequence of ordered certificates to the primary (for cleanup and feedback).
     tx_commit: Sender<Certificate>,
-    /// Sends the virtual parents to the primary's proposer.
-    tx_parents: Sender<Metadata>,
+    /// Sends the virtual parents to the primary's core.
+    tx_core:Sender<Metadata>, // New channel to send metadata to Core
     /// Outputs the sequence of ordered certificates to the application layer.
     tx_output: Sender<Certificate>,
 
@@ -74,7 +74,7 @@ impl Dolphin {
         gc_depth: Round,
         rx_certificate: Receiver<Certificate>,
         tx_commit: Sender<Certificate>,
-        tx_parents: Sender<Metadata>,
+        tx_core: Sender<Metadata>,
         tx_output: Sender<Certificate>,
         cross_shard_occurance_rate: f64,
         cross_shard_failure_rate: f64,
@@ -91,7 +91,7 @@ impl Dolphin {
                 gc_depth,
                 rx_certificate,
                 tx_commit,
-                tx_parents,
+                tx_core,
                 tx_output,
                 genesis: Certificate::genesis(&committee),
                 virtual_round: 0,
@@ -211,10 +211,11 @@ impl Dolphin {
                 self.virtual_round += 1;
                 debug!("Virtual dag moved to round {}", self.virtual_round);
                 // Send the virtual parents to the primary's proposer.
-                self.tx_parents
-                    .send(Metadata::new(self.virtual_round, quorum.unwrap()))
-                    .await
-                    .expect("Failed to send virtual parents to primary");
+
+            self.tx_core
+                .send( Metadata::new(self.virtual_round, quorum.unwrap()))
+                .await
+                .expect("Failed to send metadata to primary core");
 
                 // Reschedule the timer.
                 let deadline = Instant::now() + Duration::from_millis(self.timeout);

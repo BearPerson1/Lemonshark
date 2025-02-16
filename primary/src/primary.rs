@@ -5,7 +5,7 @@ use crate::error::DagError;
 use crate::garbage_collector::GarbageCollector;
 use crate::header_waiter::HeaderWaiter;
 use crate::helper::Helper;
-use crate::messages::{Certificate, Header, Metadata, Vote};
+use crate::messages::{Certificate, Header, Metadata, Vote,ProposerMessage};
 use crate::payload_receiver::PayloadReceiver;
 use crate::proposer::Proposer;
 use crate::synchronizer::Synchronizer;
@@ -83,7 +83,7 @@ impl Primary {
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel::<(Digest, WorkerId, Option<u64>)>(CHANNEL_CAPACITY);
-        let (tx_parents, rx_parents) = channel::<(Vec<Certificate>, Round)>(CHANNEL_CAPACITY);
+        let (tx_parents, rx_parents) = channel::<ProposerMessage>(CHANNEL_CAPACITY);
         let (tx_headers, rx_headers) = channel(CHANNEL_CAPACITY);
         let (tx_sync_headers, rx_sync_headers) = channel(CHANNEL_CAPACITY);
         let (tx_sync_certificates, rx_sync_certificates) = channel(CHANNEL_CAPACITY);
@@ -173,6 +173,7 @@ impl Primary {
             /* rx_consensus */ tx_output,
             /* tx_proposer */ tx_parents,
             parameters.cert_timeout,
+            rx_metadata,
         );
 
         // Keeps track of the latest consensus round and allows other tasks to clean up their their internal state
@@ -217,7 +218,7 @@ impl Primary {
             /* rx_core */ rx_parents,
             /* rx_workers */ rx_our_digests,
             /* tx_core */ tx_headers,
-            /* rx_consensus */ rx_metadata,
+            ///* rx_consensus */ rx_metadata,
             parameters.cross_shard_occurance_rate,
             parameters.cross_shard_failure_rate,
             parameters.causal_transactions_collision_rate,

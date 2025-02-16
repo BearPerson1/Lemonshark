@@ -339,6 +339,13 @@ impl Hash for Certificate {
     }
 }
 
+
+#[derive(Debug)]
+pub enum ProposerMessage {
+    Certificates(Vec<Certificate>, Round),
+    Metadata(Metadata),
+}
+
 impl fmt::Debug for Certificate {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(

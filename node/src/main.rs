@@ -109,6 +109,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
             let (tx_client_messages, mut rx_client_messages) = channel::<ClientMessage>(CHANNEL_CAPACITY);
+            
+
             #[cfg(not(feature = "dolphin"))]
             {
                 Tusk::spawn(
