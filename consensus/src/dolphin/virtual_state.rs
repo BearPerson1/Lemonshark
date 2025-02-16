@@ -48,6 +48,13 @@ impl VirtualState {
 
         // Ensure the certificate contains virtual metadata.
         if certificate.header.metadata.is_none() {
+            debug!(
+                "Certificate rejected - Missing metadata: cert={{author: {}, round: {}, id: {}, shard: {}}}",
+                certificate.header.author,
+                certificate.header.round,
+                certificate.header.id,
+                certificate.header.shard_num
+            );
             return false;
         }
 

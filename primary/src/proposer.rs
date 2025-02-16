@@ -252,7 +252,7 @@ impl Proposer {
             if let Some(metadata) = header.metadata.as_ref() {
                 debug!(
                     "{} contains virtual round {}",
-                    header, metadata.virtual_round
+                    header, metadata.virtual_round -1
                 );
                 debug!(
                     "{} virtual parents are {:?}",

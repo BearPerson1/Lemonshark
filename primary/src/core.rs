@@ -10,6 +10,7 @@ use bytes::Bytes;
 use config::Committee;
 use crypto::Hash as _;
 use crypto::{Digest, PublicKey, SignatureService};
+use futures::future::ok;
 use log::{debug, error, warn};
 use network::{CancelHandler, ReliableSender};
 use std::collections::{HashMap, HashSet};
@@ -74,9 +75,10 @@ pub struct Core {
     // Stuff for lemonshark: 
     cert_timeout: u64,
     certificate_buffers: HashMap<Round, CertificateBuffer>,
-    buffer_check_interval: Duration,  // How often to check buffers
+    buffer_check_interval: Duration,
     last_buffer_check: Instant,       // When did we last check buffers
     rx_metadata: Receiver<Metadata>,
+    completed_round: Round,
 
 }
 
@@ -150,6 +152,7 @@ impl Core {
                 buffer_check_interval: Duration::from_millis(50), // Check every 25ms
                 last_buffer_check: Instant::now(),
                 rx_metadata,
+                completed_round: 0,
             }
             .run()
             .await;
@@ -260,6 +263,10 @@ impl Core {
                         return Err(DagError::ProposerSendError(e.to_string()));
                     }
                 }
+
+                // Update round_completed after successful send
+                self.completed_round = std::cmp::max(self.completed_round, round);
+                debug!("Updated round_completed to {}", self.completed_round);
             }
         }
     
@@ -295,7 +302,29 @@ impl Core {
         self.store.write(certificate.digest().to_vec(), bytes).await;
     
         let cert_round = certificate.round();
-        
+
+            // Early exit if this round has already been processed
+        if cert_round <= self.completed_round {
+            debug!(
+                "Skipping certificate processing for round {} (already completed up to round {})",
+                cert_round,
+                self.completed_round
+            );
+
+
+            // send it to consensus layer
+            let id = certificate.header.id.clone();
+            if let Err(e) = self.tx_consensus.send(certificate).await {
+                warn!(
+                    "Failed to deliver certificate {} to the consensus: {}",
+                    id, e
+                );
+                return Err(DagError::ConsensusSendError(e.to_string()));
+            }
+
+           return Ok(());
+        }
+            
         // Get or create buffer and add certificate
         let buffer = self.certificate_buffers
             .entry(cert_round)
@@ -619,12 +648,11 @@ impl Core {
 
     // Main loop listening to incoming messages.
     pub async fn run(&mut self) {
-        let mut buffer_check_timer = tokio::time::interval(self.buffer_check_interval);
 
+        let mut buffer_check_timer = tokio::time::interval(self.buffer_check_interval);
 
         loop {
             let result = tokio::select! {
-
                 _ = buffer_check_timer.tick() => {
                     debug!("Timer triggered buffer check");
                     self.process_certificate_buffers().await
@@ -676,7 +704,7 @@ impl Core {
                     else 
                     {
                         let now = Instant::now();
-                        let timeout_duration = Duration::from_millis(self.cert_timeout);
+                       // let timeout_duration = Duration::from_millis(self.cert_timeout);
                         
                         // Get or create buffer for this round
                         let buffer = self.certificate_buffers
