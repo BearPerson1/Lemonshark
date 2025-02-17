@@ -213,24 +213,25 @@ class Bench:
         rate_share = ceil(rate / committee.workers())
 
         # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
+        good_nodes = committee._get_good_nodes(faults)
         for i, addresses in enumerate(workers_addresses):
             primary_client_addr = committee.ip(primary_to_client_addresses[i])
             for (id, address) in addresses:
-                host = Committee.ip(address)
-                cmd = CommandMaker.run_client(
-                    address,
-                    bench_parameters.tx_size,
-                    rate_share,
-                    [x for y in workers_addresses for _, x in y],
-                    longest_causal_chain=bench_parameters.longest_causal_chain,
-                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
-                )
-                log_file = PathMaker.client_log_file(i, id)
-                self._background_run(host, cmd, log_file)
+                if primary_client_addr in good_nodes:
+                    host = Committee.ip(address)
+                    cmd = CommandMaker.run_client(
+                        address,
+                        bench_parameters.tx_size,
+                        rate_share,
+                        [x for y in workers_addresses for _, x in y],
+                        longest_causal_chain=bench_parameters.longest_causal_chain,
+                        primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
+                    )
+                    log_file = PathMaker.client_log_file(i, id)
+                    self._background_run(host, cmd, log_file)
 
         # Run the primaries (except the faulty ones).
         Print.info('Booting primaries...')
-        good_nodes = committee._get_good_nodes(faults)
         for name, authority in committee.json['authorities'].items():
             if name in good_nodes:
                 i = authority['primary_id'] - 1
@@ -269,7 +270,6 @@ class Bench:
             sleep(ceil(duration / 20))
         self.kill(hosts=hosts, delete_logs=False)
 
-
     def _logs(self, committee, faults):
         # Delete local logs (if any).
         cmd = CommandMaker.clean_logs()
@@ -282,27 +282,29 @@ class Bench:
         for i, addresses in enumerate(progress):
             for id, address in addresses:
                 host = Committee.ip(address)
-                c = Connection(host, user='ubuntu',
-                               connect_kwargs=self.connect)
-                c.get(
-                    PathMaker.client_log_file(i, id),
-                    local=PathMaker.client_log_file(i, id)
-                )
-                c.get(
-                    PathMaker.worker_log_file(i, id),
-                    local=PathMaker.worker_log_file(i, id)
-                )
+                if host in committee._get_good_nodes(faults):
+                    c = Connection(host, user='ubuntu',
+                                   connect_kwargs=self.connect)
+                    c.get(
+                        PathMaker.client_log_file(i, id),
+                        local=PathMaker.client_log_file(i, id)
+                    )
+                    c.get(
+                        PathMaker.worker_log_file(i, id),
+                        local=PathMaker.worker_log_file(i, id)
+                    )
 
         primary_addresses = committee.primary_addresses(faults)
         progress = progress_bar(
             primary_addresses, prefix='Downloading primaries logs:')
         for i, address in enumerate(progress):
             host = Committee.ip(address)
-            c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
-            c.get(
-                PathMaker.primary_log_file(i),
-                local=PathMaker.primary_log_file(i)
-            )
+            if host in committee._get_good_nodes(faults):
+                c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
+                c.get(
+                    PathMaker.primary_log_file(i),
+                    local=PathMaker.primary_log_file(i)
+                )
 
         # Parse logs and return the parser.
         Print.info('Parsing logs and computing performance...')
