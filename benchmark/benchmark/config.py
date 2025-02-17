@@ -107,22 +107,40 @@ class Committee:
 
     def _get_good_nodes(self, faults):
         """Helper method to ensure consistent random selection between calls"""
+        if faults < 0:
+            raise ValueError("Number of faults cannot be negative")
+            
+        if self.size() <= faults:
+            raise ValueError(f"Number of faults ({faults}) must be less than committee size ({self.size()})")
+            
         # Use cached selection if available for this fault count
         if faults in self._cached_good_nodes:
             return self._cached_good_nodes[faults]
         
-        # Make new selection if not cached
-        all_authorities = list(self.json['authorities'].items())
-        good_nodes = set(name for name, _ in random.sample(all_authorities, self.size() - faults))
+        # Set a deterministic seed based on committee composition
+        # This ensures same faulty nodes are selected for same committee
+        committee_hash = hash(tuple(sorted(self.json['authorities'].keys())))
+        random.seed(committee_hash)
         
-        # Cache the selection
-        self._cached_good_nodes[faults] = good_nodes
-        
-        if faults > 0:
-            faulty_nodes = [name for name, _ in all_authorities if name not in good_nodes]
-            Print.info(f"Selected faulty nodes: {faulty_nodes}")
+        try:
+            all_authorities = list(self.json['authorities'].items())
+            if not all_authorities:
+                raise ValueError("Committee cannot be empty")
+                
+            good_nodes = set(name for name, _ in random.sample(all_authorities, self.size() - faults))
             
-        return good_nodes
+            # Cache the selection
+            self._cached_good_nodes[faults] = good_nodes
+            
+            if faults > 0:
+                faulty_nodes = [name for name, _ in all_authorities if name not in good_nodes]
+                Print.info(f"Selected faulty nodes: {faulty_nodes}")
+                
+            return good_nodes
+
+        finally:
+        # Reset the random seed to not affect other random operations
+            random.seed() 
 
     def primary_addresses(self, faults=0):
         ''' Returns an ordered list of primaries' addresses. '''
