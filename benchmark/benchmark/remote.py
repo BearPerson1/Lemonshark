@@ -165,6 +165,7 @@ class Bench:
         # Create alias for the client and nodes binary.
         cmd = CommandMaker.alias_binaries(PathMaker.binary_path())
         subprocess.run([cmd], shell=True)
+
         # Generate configuration files.
         keys = []
         key_files = [PathMaker.key_file(i) for i in range(len(hosts))]
@@ -172,7 +173,9 @@ class Bench:
             cmd = CommandMaker.generate_key(filename).split()
             subprocess.run(cmd, check=True)
             keys += [Key.from_file(filename)]
+
         names = [x.name for x in keys]
+
         if bench_parameters.collocate:
             workers = bench_parameters.workers
             addresses = OrderedDict(
@@ -182,21 +185,22 @@ class Bench:
             addresses = OrderedDict(
                 (x, y) for x, y in zip(names, hosts)
             )
+
         committee = Committee(addresses, self.settings.base_port)
-        good_nodes = committee._get_good_nodes(bench_parameters.faults)
         committee.print(PathMaker.committee_file())
+
         node_parameters.print(PathMaker.parameters_file())
         # Cleanup all nodes and upload configuration files.
         names = names[:len(names)-bench_parameters.faults]
         progress = progress_bar(names, prefix='Uploading config files:')
         for i, name in enumerate(progress):
-            if name in good_nodes:  # Only upload to non-faulty nodes
-                for ip in committee.ips(name):
-                    c = Connection(ip, user='ubuntu', connect_kwargs=self.connect)
-                    c.run(f'{CommandMaker.cleanup()} || true', hide=True)
-                    c.put(PathMaker.committee_file(), '.')
-                    c.put(PathMaker.key_file(i), '.')
-                    c.put(PathMaker.parameters_file(), '.')
+            for ip in committee.ips(name):
+                c = Connection(ip, user='ubuntu', connect_kwargs=self.connect)
+                c.run(f'{CommandMaker.cleanup()} || true', hide=True)
+                c.put(PathMaker.committee_file(), '.')
+                c.put(PathMaker.key_file(i), '.')
+                c.put(PathMaker.parameters_file(), '.')
+
         return committee
 
     def _run_single(self, rate, committee, bench_parameters, debug=False):
@@ -213,62 +217,50 @@ class Bench:
         rate_share = ceil(rate / committee.workers())
 
         # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
-        Print.info('Booting clients...')
-        good_nodes = committee._get_good_nodes(faults)
         for i, addresses in enumerate(workers_addresses):
-            name = list(committee.json['authorities'].keys())[i]
-            if name in good_nodes:  # Only boot clients for good nodes
-                authority = committee.json['authorities'][name]
-                i = authority['primary_id'] - 1  # Use primary_id instead of enumerate index
-                primary_client_addr = committee.ip(primary_to_client_addresses[i])
-                for (id, address) in addresses:
-                    host = Committee.ip(address)
-                    cmd = CommandMaker.run_client(
-                        address,
-                        bench_parameters.tx_size,
-                        rate_share,
-                        [x for y in workers_addresses for _, x in y],
-                        longest_causal_chain=bench_parameters.longest_causal_chain,
-                        primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
-                    )
-                    log_file = PathMaker.client_log_file(i, id)
-                    self._background_run(host, cmd, log_file)
-
+            primary_client_addr = committee.ip(primary_to_client_addresses[i])
+            for (id, address) in addresses:
+                host = Committee.ip(address)
+                cmd = CommandMaker.run_client(
+                    address,
+                    bench_parameters.tx_size,
+                    rate_share,
+                    [x for y in workers_addresses for _, x in y],
+                    longest_causal_chain=bench_parameters.longest_causal_chain,
+                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
+                )
+                log_file = PathMaker.client_log_file(i, id)
+                self._background_run(host, cmd, log_file)
 
         # Run the primaries (except the faulty ones).
         Print.info('Booting primaries...')
-        good_nodes = committee._get_good_nodes(faults)
-        for name, authority in committee.json['authorities'].items():
-            if name in good_nodes:
-                i = authority['primary_id'] - 1
-                host = Committee.ip(committee.primary_addresses(faults)[i])
-                cmd = CommandMaker.run_primary(
-                    PathMaker.key_file(i),
-                    PathMaker.committee_file(),
-                    PathMaker.db_path(i),
-                    PathMaker.parameters_file(),
-                    debug=debug
-                )
-                log_file = PathMaker.primary_log_file(i)
-                self._background_run(host, cmd, log_file)
+        for i, address in enumerate(committee.primary_addresses(faults)):
+            host = Committee.ip(address)
+            cmd = CommandMaker.run_primary(
+                PathMaker.key_file(i),
+                PathMaker.committee_file(),
+                PathMaker.db_path(i),
+                PathMaker.parameters_file(),
+                debug=debug
+            )
+            log_file = PathMaker.primary_log_file(i)
+            self._background_run(host, cmd, log_file)
 
         # Run the workers (except the faulty ones).
         Print.info('Booting workers...')
-        for name, authority in committee.json['authorities'].items():
-            if name in good_nodes:
-                i = authority['primary_id'] - 1
-                for id, worker in authority['workers'].items():
-                    host = Committee.ip(worker['transactions'])
-                    cmd = CommandMaker.run_worker(
-                        PathMaker.key_file(i),
-                        PathMaker.committee_file(),
-                        PathMaker.db_path(i, id),
-                        PathMaker.parameters_file(),
-                        id,
-                        debug=debug
-                    )
-                    log_file = PathMaker.worker_log_file(i, id)
-                    self._background_run(host, cmd, log_file)
+        for i, addresses in enumerate(workers_addresses):
+            for (id, address) in addresses:
+                host = Committee.ip(address)
+                cmd = CommandMaker.run_worker(
+                    PathMaker.key_file(i),
+                    PathMaker.committee_file(),
+                    PathMaker.db_path(i, id),
+                    PathMaker.parameters_file(),
+                    id,  # The worker's id.
+                    debug=debug
+                )
+                log_file = PathMaker.worker_log_file(i, id)
+                self._background_run(host, cmd, log_file)
 
         # Wait for all transactions to be processed.
         duration = bench_parameters.duration
@@ -276,49 +268,39 @@ class Bench:
             sleep(ceil(duration / 20))
         self.kill(hosts=hosts, delete_logs=False)
 
-
     def _logs(self, committee, faults):
         # Delete local logs (if any).
         cmd = CommandMaker.clean_logs()
         subprocess.run([cmd], shell=True, stderr=subprocess.DEVNULL)
-
-        # Get good nodes
-        good_nodes = committee._get_good_nodes(faults)
 
         # Download log files.
         workers_addresses = committee.workers_addresses(faults)
         progress = progress_bar(
             workers_addresses, prefix='Downloading workers logs:')
         for i, addresses in enumerate(progress):
-            name = list(committee.json['authorities'].keys())[i]
-            if name in good_nodes:  # Only download logs from good nodes
-                authority = committee.json['authorities'][name]
-                i = authority['primary_id'] - 1  # Use primary_id instead of enumerate index
-                for id, address in addresses:
-                    host = Committee.ip(address)
-                    c = Connection(host, user='ubuntu',
-                                 connect_kwargs=self.connect)
-                    c.get(
-                        PathMaker.client_log_file(i, id),
-                        local=PathMaker.client_log_file(i, id)
-                    )
-                    c.get(
-                        PathMaker.worker_log_file(i, id),
-                        local=PathMaker.worker_log_file(i, id)
-                    )
+            for id, address in addresses:
+                host = Committee.ip(address)
+                c = Connection(host, user='ubuntu',
+                               connect_kwargs=self.connect)
+                c.get(
+                    PathMaker.client_log_file(i, id),
+                    local=PathMaker.client_log_file(i, id)
+                )
+                c.get(
+                    PathMaker.worker_log_file(i, id),
+                    local=PathMaker.worker_log_file(i, id)
+                )
 
         primary_addresses = committee.primary_addresses(faults)
         progress = progress_bar(
             primary_addresses, prefix='Downloading primaries logs:')
         for i, address in enumerate(progress):
-            name = list(committee.json['authorities'].keys())[i]
-            if name in good_nodes:  # Only download logs from good nodes
-                host = Committee.ip(address)
-                c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
-                c.get(
-                    PathMaker.primary_log_file(i),
-                    local=PathMaker.primary_log_file(i)
-                )
+            host = Committee.ip(address)
+            c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
+            c.get(
+                PathMaker.primary_log_file(i),
+                local=PathMaker.primary_log_file(i)
+            )
 
         # Parse logs and return the parser.
         Print.info('Parsing logs and computing performance...')

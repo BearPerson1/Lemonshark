@@ -61,10 +61,17 @@ class Committee:
         assert len({len(x) for x in addresses.values()}) == 1
         assert isinstance(base_port, int) and base_port > 1024
 
-        self._cached_good_nodes = {}
-
         port = base_port
         self.json = {'authorities': OrderedDict()}
+
+                # randomize faulty node
+                # modify these to not randomize them
+        committee_hash = hash(tuple(sorted(self.json['authorities'].keys())))
+        random.seed(committee_hash)
+        available_primary_ids = list(range(1, len(addresses) + 1))
+        random.shuffle(available_primary_ids)  # Shuffle the list in place
+
+
         for i, (name, hosts) in enumerate(addresses.items()): 
             host = hosts.pop(0)
             primary_addr = {
@@ -87,92 +94,79 @@ class Committee:
                 'stake': 1,
                 'primary': primary_addr,
                 'workers': workers_addr,
-                'primary_id': i + 1
+                'primary_id': available_primary_ids.pop()
             }
     
     def primary_to_client_addresses(self, faults=0):
         ''' Returns an ordered list of primary-to-client addresses. '''
         assert faults < self.size()
         addresses = []
-        
-        # Use the same cached random selection as primary_addresses
-        good_nodes = self._get_good_nodes(faults)
+        good_nodes = self.size() - faults
         
         # Only include addresses for non-faulty nodes
-        for name, authority in self.json['authorities'].items():
-            if name in good_nodes:
-                addresses += [authority['primary']['primary_to_client']]
+        for authority in list(self.json['authorities'].values())[:good_nodes]:
+            addresses += [authority['primary']['primary_to_client']]
     
         return addresses
 
-    def _get_good_nodes(self, faults):
-        """Helper method to ensure consistent random selection between calls"""
-        if faults < 0:
-            raise ValueError("Number of faults cannot be negative")
+    # def _get_good_nodes(self, faults):
+    #     """Helper method to ensure consistent random selection between calls"""
+    #     if faults < 0:
+    #         raise ValueError("Number of faults cannot be negative")
             
-        if self.size() <= faults:
-            raise ValueError(f"Number of faults ({faults}) must be less than committee size ({self.size()})")
+    #     if self.size() <= faults:
+    #         raise ValueError(f"Number of faults ({faults}) must be less than committee size ({self.size()})")
             
-        # Use cached selection if available for this fault count
-        if faults in self._cached_good_nodes:
-            return self._cached_good_nodes[faults]
+    #     # Use cached selection if available for this fault count
+    #     if faults in self._cached_good_nodes:
+    #         return self._cached_good_nodes[faults]
         
-        # Set a deterministic seed based on committee composition
-        # This ensures same faulty nodes are selected for same committee
-        committee_hash = hash(tuple(sorted(self.json['authorities'].keys())))
-        random.seed(committee_hash)
+    #     # Set a deterministic seed based on committee composition
+    #     # This ensures same faulty nodes are selected for same committee
+    #     committee_hash = hash(tuple(sorted(self.json['authorities'].keys())))
+    #     random.seed(committee_hash)
         
-        try:
-            all_authorities = list(self.json['authorities'].items())
-            if not all_authorities:
-                raise ValueError("Committee cannot be empty")
+    #     try:
+    #         all_authorities = list(self.json['authorities'].items())
+    #         if not all_authorities:
+    #             raise ValueError("Committee cannot be empty")
                 
-            good_nodes = set(name for name, _ in random.sample(all_authorities, self.size() - faults))
+    #         good_nodes = set(name for name, _ in random.sample(all_authorities, self.size() - faults))
             
-            # Cache the selection
-            self._cached_good_nodes[faults] = good_nodes
+    #         # Cache the selection
+    #         self._cached_good_nodes[faults] = good_nodes
             
-            if faults > 0:
-                faulty_nodes = [name for name, _ in all_authorities if name not in good_nodes]
-                Print.info(f"Selected faulty nodes: {faulty_nodes}")
+    #         if faults > 0:
+    #             faulty_nodes = [name for name, _ in all_authorities if name not in good_nodes]
+    #             Print.info(f"Selected faulty nodes: {faulty_nodes}")
                 
-            return good_nodes
+    #         return good_nodes
 
-        finally:
-        # Reset the random seed to not affect other random operations
-            random.seed() 
+    #     finally:
+    #     # Reset the random seed to not affect other random operations
+    #         random.seed() 
 
     def primary_addresses(self, faults=0):
         ''' Returns an ordered list of primaries' addresses. '''
         assert faults < self.size()
         addresses = []
-        
-        # Use cached/consistent random selection
-        good_nodes = self._get_good_nodes(faults)
-        
-        # Only include addresses for non-faulty nodes
-        for name, authority in self.json['authorities'].items():
-            if name in good_nodes:
-                addresses += [authority['primary']['primary_to_primary']]
-        
+        good_nodes = self.size() - faults
+        for authority in list(self.json['authorities'].values())[:good_nodes]:
+            addresses += [authority['primary']['primary_to_primary']]
         return addresses
+
+
 
     def workers_addresses(self, faults=0):
         ''' Returns an ordered list of list of workers' addresses. '''
         assert faults < self.size()
         addresses = []
-        
-        # Use the same cached random selection as primary_addresses
-        good_nodes = self._get_good_nodes(faults)
-        
-        # Only include workers for non-faulty nodes
-        for name, authority in self.json['authorities'].items():
-            if name in good_nodes:
-                authority_addresses = []
-                for id, worker in authority['workers'].items():
-                    authority_addresses += [(id, worker['transactions'])]
-                addresses.append(authority_addresses)
-        
+        good_nodes = self.size() - faults
+        for authority in list(self.json['authorities'].values())[:good_nodes]:
+            authority_addresses = []
+            for id, worker in authority['workers'].items():
+                authority_addresses += [(id, worker['transactions'])]
+            addresses.append(authority_addresses)
         return addresses
 
     def ips(self, name=None):
@@ -196,16 +190,9 @@ class Committee:
 
         return list(ips)
 
-    def get_faulty_nodes(self, faults=0):
-        ''' Returns the list of nodes selected as faulty '''
-        assert faults < self.size()
-        good_nodes = self._get_good_nodes(faults)
-        return [name for name in self.json['authorities'].keys() if name not in good_nodes]
-
     def remove_nodes(self, nodes):
         ''' remove the `nodes` last nodes from the committee. '''
         assert nodes < self.size()
-        self._cached_good_nodes = {}  # Clear cache when committee changes
         for _ in range(nodes):
             self.json['authorities'].popitem()
 

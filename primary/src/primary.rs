@@ -118,6 +118,8 @@ impl Primary {
                 tx_cert_requests,
             },
         );
+
+        info!("Primary Id for shards: {}",committee.get_primary_id(&name));
         info!(
             "Primary {} listening to primary messages on {}",
             name, address
