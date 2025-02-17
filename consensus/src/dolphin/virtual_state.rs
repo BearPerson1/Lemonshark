@@ -141,35 +141,95 @@ impl VirtualState {
 
     /// Print the mode and latest waves of each authority.
     /// these are based off the last cert of those nodes?
-    pub fn print_status(&self, certificate: &Certificate) {
-        let mut seen = HashSet::new();
-        let steady_wave = (certificate.virtual_round() + 1) / 2;
-        for w in (1..=steady_wave).rev() {
-            if let Some(nodes) = self.steady_authorities_sets.get(&w) {
-                for node in nodes {
-                    if seen.insert(node) {
-                        debug!("Latest steady wave of {}: {}", node, w);
-                    }
+/// Print the mode and latest waves of each authority.
+pub fn print_status(&self, certificate: &Certificate) {
+    let mut seen = HashSet::new();
+    let steady_wave = (certificate.virtual_round() + 1) / 2;
+    
+    debug!("\n=== Authority Status Summary ===");
+    debug!(
+        "Certificate Details:\n\
+         ├─ ID: {}\n\
+         ├─ Primary ID: {}\n\
+         ├─ Round: {}\n\
+         └─ Steady Wave: {}",
+        certificate.header.id,
+        self.committee.get_all_primary_ids()[&certificate.origin()],
+        certificate.virtual_round(),
+        steady_wave
+    );
+
+    debug!("\n=== Steady State Authorities ===");
+    for w in (1..=steady_wave).rev() {
+        if let Some(nodes) = self.steady_authorities_sets.get(&w) {
+            for node in nodes {
+                if seen.insert(node) {
+                    debug!(
+                        "Authority:\n\
+                         ├─ Primary ID: {}\n\
+                         └─ Latest Steady Wave: {}",
+                        self.committee.get_all_primary_ids()[node],
+                        w
+                    );
                 }
-            }
-            if seen.len() == self.committee.size() {
-                break;
             }
         }
-
-        seen.clear();
-        let fallback_wave = (certificate.virtual_round() + 1) / 4;
-        for w in (1..=fallback_wave).rev() {
-            if let Some(nodes) = self.fallback_authorities_sets.get(&w) {
-                for node in nodes {
-                    if seen.insert(&node) {
-                        debug!("Latest fallback wave of {}: {}", node, w);
-                    }
-                }
-            }
-            if seen.len() == self.committee.size() {
-                break;
-            }
+        if seen.len() == self.committee.size() {
+            break;
         }
     }
+
+    seen.clear();
+    let fallback_wave = (certificate.virtual_round() + 1) / 4;
+    
+    debug!("\n=== Fallback State Authorities ===");
+    for w in (1..=fallback_wave).rev() {
+        if let Some(nodes) = self.fallback_authorities_sets.get(&w) {
+            for node in nodes {
+                if seen.insert(node) {
+                    debug!(
+                        "Authority:\n\
+                         ├─ Primary ID: {}\n\
+                         └─ Latest Fallback Wave: {}",
+                        self.committee.get_all_primary_ids()[node],
+                        w
+                    );
+                }
+            }
+        }
+        if seen.len() == self.committee.size() {
+            break;
+        }
+    }
+
+    // Print authorities with no state records
+    debug!("\n=== Authorities Without State Records ===");
+    let all_authorities: HashSet<_> = self.committee.authorities.keys().collect();
+    let steady_authorities: HashSet<_> = self.steady_authorities_sets
+        .values()
+        .flat_map(|set| set.iter())
+        .collect();
+    let fallback_authorities: HashSet<_> = self.fallback_authorities_sets
+        .values()
+        .flat_map(|set| set.iter())
+        .collect();
+    
+    for authority in all_authorities.difference(&steady_authorities) {
+        if !fallback_authorities.contains(authority) {
+            debug!(
+                "Authority:\n\
+                 ├─ Primary ID: {}\n\
+                 └─ Status: No State Records",
+                self.committee.get_all_primary_ids()[authority]
+            );
+        }
+    }
+    
+    debug!("=====================================\n");
+}
+
+
+
+
+
 }

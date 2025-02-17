@@ -489,21 +489,21 @@ impl Core {
             return Ok(());
         }
 
-        debug!(
-            "=== Vote Creation Check ===\nHeader Round: {}\nHeader Author: {}\nHeader ID: {}\nOur Name: {}",
-            header.round,
-            header.author,
-            header.id,
-            self.name
-        );
+        // debug!(
+        //     "=== Vote Creation Check ===\nHeader Round: {}\nHeader Author: {}\nHeader ID: {}\nOur Name: {}",
+        //     header.round,
+        //     header.author,
+        //     header.id,
+        //     self.name
+        // );
  
-        if let Some(voted) = self.last_voted.get(&header.round) {
-            debug!(
-                "Current voted authors for round {}: {:?}",
-                header.round,
-                voted
-            );
-        }
+        // if let Some(voted) = self.last_voted.get(&header.round) {
+        //     debug!(
+        //         "Current voted authors for round {}: {:?}",
+        //         header.round,
+        //         voted
+        //     );
+        // }
 
 
         // Check if we can vote for this header.
@@ -521,13 +521,13 @@ impl Core {
             // Make a vote and send it to the header's creator.
             let vote = Vote::new(header, &self.name, &mut self.signature_service).await;
             debug!("Created {:?}", vote);
-            debug!(
-                "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
-                vote.origin,
-                vote.author,
-                vote.round,
-                vote.id
-            );
+            // debug!(
+            //     "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
+            //     vote.origin,
+            //     vote.author,
+            //     vote.round,
+            //     vote.id
+            // );
             if vote.origin == self.name {
                 self.process_vote(vote)
                     .await
@@ -553,13 +553,13 @@ impl Core {
     #[async_recursion]
     async fn process_vote(&mut self, vote: Vote) -> DagResult<()> {
         debug!("Processing vote {:?}", vote);
-        debug!(
-            "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
-            vote.origin,
-            vote.author,
-            vote.round,
-            vote.id
-        );
+        // debug!(
+        //     "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
+        //     vote.origin,
+        //     vote.author,
+        //     vote.round,
+        //     vote.id
+        // );
 
         debug!(
             "Current header state:\n Round: {}\n Author: {}\n ID: {}",

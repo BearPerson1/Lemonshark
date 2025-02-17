@@ -296,6 +296,11 @@ impl Committer {
         sequence
     }  
 
+
+
+
+
+
 // ==================================================================================
 
     /// Try to commit. If we succeed, output am ordered sequence.
@@ -350,6 +355,8 @@ impl Committer {
 
     /// Updates the authorities mode (steady state vs fallback) and return whether we can commit
     /// the leader of the wave.
+    /// 
+    /// 
     fn update_validator_mode(
         &self,
         certificate: &Certificate,
@@ -358,173 +365,158 @@ impl Committer {
         let steady_wave = (certificate.virtual_round() + 1) / 2;
         let fallback_wave = (certificate.virtual_round() + 1) / 4;
         
-        // Print current validator being processed
         debug!(
             "\n=== Processing Validator Mode Update ===\n\
-             Certificate Author: {:?}\n\
+             Certificate ID: {}\n\
              Certificate Round: {}\n\
              Steady Wave: {}\n\
              Fallback Wave: {}", 
-            certificate.origin(),
+            certificate.header.id,
             certificate.virtual_round(),
             steady_wave,
             fallback_wave
         );
     
-        // Print current state of all validators
+        // Print current state of all validators with more descriptive states
         debug!("\n=== Current State of All Validators ===");
         for authority in self.committee.authorities.keys() {
-            let in_steady = state
-                .steady_authorities_sets
-                .get(&steady_wave)
-                .map_or(false, |set| set.contains(authority));
-            let in_fallback = state
-                .fallback_authorities_sets
-                .get(&fallback_wave)
-                .map_or(false, |set| set.contains(authority));
+            let steady_status = match state.steady_authorities_sets.get(&steady_wave) {
+                Some(set) if set.contains(authority) => "Active in Steady State",
+                Some(_) => "Not in Steady Set",
+                None => "No Steady State Record",
+            };
+    
+            let fallback_status = match state.fallback_authorities_sets.get(&fallback_wave) {
+                Some(set) if set.contains(authority) => "Active in Fallback State",
+                Some(_) => "Not in Fallback Set",
+                None => "No Fallback State Record",
+            };
             
+            // Get the latest certificate for this authority
+            let latest_cert = state.dag
+                .iter()
+                .filter_map(|(_, certs)| certs.get(authority))
+                .max_by_key(|(_, cert)| cert.header.round)
+                .map(|(_, cert)| cert.header.id.clone());
+    
             debug!(
-                "Authority {:?}:\n\
-                 ├─ Primary ID: {:?}\n\
-                 ├─ In Steady State: {}\n\
-                 └─ In Fallback State: {}", 
-                authority,
-                self.committee.get_all_primary_ids()[authority],
-                in_steady,
-                in_fallback
+                "Authority Latest Certificate:\n\
+                 ├─ Certificate ID: {}\n\
+                 ├─ Steady Status: {}\n\
+                 └─ Fallback Status: {}", 
+                latest_cert.map_or("No Certificate".to_string(), |id| id.to_string()),
+                steady_status,
+                fallback_status
             );
         }
     
-        // Check if already updated
-        if state
-            .steady_authorities_sets
-            .entry(steady_wave)
+        if state.steady_authorities_sets.entry(steady_wave)
             .or_insert_with(HashSet::new)
             .contains(&certificate.origin())
-            || state
-                .fallback_authorities_sets
-                .entry(fallback_wave)
+            || state.fallback_authorities_sets.entry(fallback_wave)
                 .or_insert_with(HashSet::new)
                 .contains(&certificate.origin())
         {
             debug!(
                 "\n=== No Update Needed ===\n\
-                 Authority {:?} already has mode set for current wave\n\
-                 └─ Primary ID: {:?}",
-                certificate.origin(),
-                self.committee.get_all_primary_ids()[&certificate.origin()]
+                 Certificate ID: {}\n\
+                 ├─ Round: {}\n\
+                 ├─ Steady Wave: {}\n\
+                 └─ Fallback Wave: {}",
+                certificate.header.id,
+                certificate.virtual_round(),
+                steady_wave,
+                fallback_wave
             );
             return None;
         }
     
         // Check steady state transition
-        if state
-            .steady_authorities_sets
+        if state.steady_authorities_sets
             .entry(steady_wave - 1)
             .or_insert_with(HashSet::new)
             .contains(&certificate.origin())
         {
             debug!(
                 "\n=== Checking Steady State Transition ===\n\
-                 Authority {:?} was in steady state in wave {}\n\
-                 └─ Primary ID: {:?}",
-                certificate.origin(),
-                steady_wave - 1,
-                self.committee.get_all_primary_ids()[&certificate.origin()]
+                 Certificate ID: {}\n\
+                 ├─ Round: {}\n\
+                 ├─ Previous Wave: {}\n\
+                 └─ Status: Previously in Steady State",
+                certificate.header.id,
+                certificate.virtual_round(),
+                steady_wave - 1
             );
             
             let leader = self.check_steady_commit(certificate, steady_wave - 1, state);
-            if leader.is_some() {
+            if let Some(leader_cert) = &leader {
                 debug!(
-                    "✓ Steady state commit successful\n\
-                     ├─ Authority staying in steady state\n\
-                     └─ Leader found: {:?}",
-                    self.committee.get_all_primary_ids()[&leader.as_ref().unwrap().origin()]
+                    "✓ Steady State Commit Successful\n\
+                     ├─ Authority maintaining Steady State\n\
+                     ├─ Leader Certificate ID: {}\n\
+                     └─ Leader Round: {}",
+                    leader_cert.header.id,
+                    leader_cert.virtual_round()
                 );
-                state
-                    .steady_authorities_sets
+                state.steady_authorities_sets
                     .get_mut(&steady_wave)
                     .unwrap()
                     .insert(certificate.origin());
                 return leader;
             }
-            debug!("✗ Steady state commit failed");
+            debug!("✗ Steady State Commit Failed - Will Check Fallback");
         }
     
         // Check fallback state transition
-        if state
-            .fallback_authorities_sets
+        if state.fallback_authorities_sets
             .entry(fallback_wave - 1)
             .or_insert_with(HashSet::new)
             .contains(&certificate.origin())
         {
             debug!(
                 "\n=== Checking Fallback State Transition ===\n\
-                 Authority {:?} was in fallback state in wave {}\n\
-                 └─ Primary ID: {:?}",
-                certificate.origin(),
-                fallback_wave - 1,
-                self.committee.get_all_primary_ids()[&certificate.origin()]
+                 Certificate ID: {}\n\
+                 ├─ Round: {}\n\
+                 ├─ Previous Wave: {}\n\
+                 └─ Status: Previously in Fallback State",
+                certificate.header.id,
+                certificate.virtual_round(),
+                fallback_wave - 1
             );
             
             let leader = self.check_fallback_commit(certificate, fallback_wave - 1, state);
-            if leader.is_some() {
+            if let Some(leader_cert) = &leader {
                 debug!(
-                    "✓ Fallback commit successful\n\
-                     ├─ Authority transitioning to steady state\n\
-                     └─ Leader found: {:?}",
-                    self.committee.get_all_primary_ids()[&leader.as_ref().unwrap().origin()]
+                    "✓ Fallback Commit Successful\n\
+                     ├─ Authority promoting to Steady State\n\
+                     ├─ Leader Certificate ID: {}\n\
+                     └─ Leader Round: {}",
+                    leader_cert.header.id,
+                    leader_cert.virtual_round()
                 );
-                state
-                    .steady_authorities_sets
+                state.steady_authorities_sets
                     .get_mut(&steady_wave)
                     .unwrap()
                     .insert(certificate.origin());
                 return leader;
             }
-            debug!("✗ Fallback commit failed");
+            debug!("✗ Fallback Commit Failed - Will Default to Fallback");
         }
     
-        // Default to fallback state
         debug!(
             "\n=== Defaulting to Fallback State ===\n\
-             Authority {:?} moving to fallback state in wave {}\n\
-             └─ Primary ID: {:?}",
-            certificate.origin(),
-            fallback_wave,
-            self.committee.get_all_primary_ids()[&certificate.origin()]
+             Certificate ID: {}\n\
+             ├─ Round: {}\n\
+             └─ Wave: {}",
+            certificate.header.id,
+            certificate.virtual_round(),
+            fallback_wave
         );
         
-        state
-            .fallback_authorities_sets
+        state.fallback_authorities_sets
             .get_mut(&fallback_wave)
             .unwrap()
             .insert(certificate.origin());
-    
-        // Print final state after update
-        debug!("\n=== Final State After Update ===");
-        for authority in self.committee.authorities.keys() {
-            let in_steady = state
-                .steady_authorities_sets
-                .get(&steady_wave)
-                .map_or(false, |set| set.contains(authority));
-            let in_fallback = state
-                .fallback_authorities_sets
-                .get(&fallback_wave)
-                .map_or(false, |set| set.contains(authority));
-            
-            debug!(
-                "Authority {:?}:\n\
-                 ├─ Primary ID: {:?}\n\
-                 ├─ In Steady State: {}\n\
-                 └─ In Fallback State: {}", 
-                authority,
-                self.committee.get_all_primary_ids()[authority],
-                in_steady,
-                in_fallback
-            );
-        }
-        debug!("=====================================\n");
     
         None
     }
@@ -535,59 +527,74 @@ impl Committer {
         wave: Round,
         state: &VirtualState,
     ) -> Option<Certificate> {
-        debug!("Checking steady commit");
-        state
-            .steady_leader(wave)
-            .map(|(_, leader)| {
-                debug!("Steady Leader found - Primary Key: {:?}, Primary ID: {:?}, Round: {}", 
-                       leader.origin(),
-                       self.committee.get_all_primary_ids()[&leader.origin()],
-                       leader.virtual_round());
-                
-                let voting_certs = state
-                    .dag
-                    .get(&(certificate.virtual_round() - 1))
-                    .expect("We should have all the history")
-                    .values()
-                    .filter(|(digest, parent)| {
-                        let is_parent = certificate.virtual_parents().contains(&digest);
-                        let is_steady = state
-                            .steady_authorities_sets
-                            .get(&wave)
-                            .map_or_else(|| false, |x| x.contains(&parent.origin()));
-                        let is_linked = self.strong_path(parent, leader, &state.dag);
-                        if is_parent && is_steady && is_linked {
-                            debug!("Found voting cert - Primary Key: {:?}, Primary ID: {:?}, Round: {}", 
-                                   parent.origin(),
-                                   self.committee.get_all_primary_ids()[&parent.origin()],
-                                   parent.virtual_round());
-                        }
-                        is_parent && is_steady && is_linked
-                    })
-                    .collect::<Vec<_>>();
+        debug!("\n=== Checking Steady Commit ===");
+        debug!(
+            "Initiating Certificate:\n\
+             ├─ ID: {}\n\
+             ├─ Round: {}\n\
+             └─ Wave: {}",
+            certificate.header.id,
+            certificate.virtual_round(),
+            wave
+        );
+    
+        if let Some((_, leader)) = state.steady_leader(wave) {
+            debug!(
+                "Steady Leader Found:\n\
+                 ├─ Certificate ID: {}\n\
+                 ├─ Round: {}\n\
+                 └─ Wave: {}", 
+                leader.header.id,
+                leader.virtual_round(),
+                wave
+            );
+            
+            let voting_certs = state
+                .dag
+                .get(&(certificate.virtual_round() - 1))
+                .expect("We should have all the history")
+                .values()
+                .filter(|(digest, parent)| {
+                    let is_parent = certificate.virtual_parents().contains(&digest);
+                    let is_steady = state
+                        .steady_authorities_sets
+                        .get(&wave)
+                        .map_or_else(|| false, |x| x.contains(&parent.origin()));
+                    let is_linked = self.strong_path(parent, leader, &state.dag);
                     
-                debug!("Total voting certificates found: {}", voting_certs.len());
-
-                (state
-                    .dag
-                    .get(&(certificate.virtual_round() - 1))
-                    .expect("We should have all the history")
-                    .values()
-                    .filter(|(digest, parent)| {
-                        let is_parent = certificate.virtual_parents().contains(&digest);
-                        let is_steady = state
-                            .steady_authorities_sets
-                            .get(&wave)
-                            .map_or_else(|| false, |x| x.contains(&parent.origin()));
-                        let is_linked = self.strong_path(parent, leader, &state.dag);
-                        is_parent && is_steady && is_linked
-                    })
-                    .map(|(_, certificate)| self.committee.stake(&certificate.origin()))
-                    .sum::<Stake>()
-                    >= self.committee.quorum_threshold())
-                .then(|| leader.clone())
-            })
-            .flatten()
+                    if is_parent && is_steady && is_linked {
+                        debug!(
+                            "Found Voting Certificate:\n\
+                             ├─ Certificate ID: {}\n\
+                             ├─ Round: {}\n\
+                             └─ Is Linked to Leader: true",
+                            parent.header.id,
+                            parent.virtual_round()
+                        );
+                    }
+                    is_parent && is_steady && is_linked
+                })
+                .collect::<Vec<_>>();
+                
+            debug!(
+                "Voting Summary:\n\
+                 ├─ Total Voting Certificates: {}\n\
+                 └─ Required Threshold: {}",
+                voting_certs.len(),
+                self.committee.validity_threshold()
+            );
+    
+            return if voting_certs.len() >= self.committee.validity_threshold() as usize {
+                debug!("✓ Steady Commit Successful");
+                Some(leader.clone())
+            } else {
+                debug!("✗ Steady Commit Failed - Insufficient Votes");
+                None
+            };
+        }
+    
+        debug!("✗ Steady Commit Failed - No Leader Found");
+        None
     }
 
     fn check_fallback_commit(
@@ -596,59 +603,74 @@ impl Committer {
         wave: Round,
         state: &VirtualState,
     ) -> Option<Certificate> {
-        debug!("Checking fallback commit");
-        state
-            .fallback_leader(wave)
-            .map(|(_, leader)| {
-                debug!("Fallback Leader found - Primary Key: {:?}, Primary ID: {:?}, Round: {}", 
-                       leader.origin(),
-                       self.committee.get_all_primary_ids()[&leader.origin()],
-                       leader.virtual_round());
-                
-                let voting_certs = state
-                    .dag
-                    .get(&(certificate.virtual_round() - 1))
-                    .expect("We should have all the history")
-                    .values()
-                    .filter(|(digest, parent)| {
-                        let is_parent = certificate.virtual_parents().contains(&digest);
-                        let is_fallback = state
-                            .fallback_authorities_sets
-                            .get(&wave)
-                            .map_or_else(|| false, |x| x.contains(&parent.origin()));
-                        let is_linked = self.strong_path(parent, leader, &state.dag);
-                        if is_parent && is_fallback && is_linked {
-                            debug!("Found voting cert - Primary Key: {:?}, Primary ID: {:?}, Round: {}", 
-                                   parent.origin(),
-                                   self.committee.get_all_primary_ids()[&parent.origin()],
-                                   parent.virtual_round());
-                        }
-                        is_parent && is_fallback && is_linked
-                    })
-                    .collect::<Vec<_>>();
+        debug!("\n=== Checking Fallback Commit ===");
+        debug!(
+            "Initiating Certificate:\n\
+             ├─ ID: {}\n\
+             ├─ Round: {}\n\
+             └─ Wave: {}",
+            certificate.header.id,
+            certificate.virtual_round(),
+            wave
+        );
+    
+        if let Some((_, leader)) = state.fallback_leader(wave) {
+            debug!(
+                "Fallback Leader Found:\n\
+                 ├─ Certificate ID: {}\n\
+                 ├─ Round: {}\n\
+                 └─ Wave: {}", 
+                leader.header.id,
+                leader.virtual_round(),
+                wave
+            );
+            
+            let voting_certs = state
+                .dag
+                .get(&(certificate.virtual_round() - 1))
+                .expect("We should have all the history")
+                .values()
+                .filter(|(digest, parent)| {
+                    let is_parent = certificate.virtual_parents().contains(&digest);
+                    let is_fallback = state
+                        .fallback_authorities_sets
+                        .get(&wave)
+                        .map_or_else(|| false, |x| x.contains(&parent.origin()));
+                    let is_linked = self.strong_path(parent, leader, &state.dag);
                     
-                debug!("Total voting certificates found: {}", voting_certs.len());
-
-                (state
-                    .dag
-                    .get(&(certificate.virtual_round() - 1))
-                    .expect("We should have all the history")
-                    .values()
-                    .filter(|(digest, parent)| {
-                        let is_parent = certificate.virtual_parents().contains(&digest);
-                        let is_fallback = state
-                            .fallback_authorities_sets
-                            .get(&wave)
-                            .map_or_else(|| false, |x| x.contains(&parent.origin()));
-                        let is_linked = self.strong_path(parent, leader, &state.dag);
-                        is_parent && is_fallback && is_linked
-                    })
-                    .map(|(_, certificate)| self.committee.stake(&certificate.origin()))
-                    .sum::<Stake>()
-                    >= self.committee.quorum_threshold())
-                .then(|| leader.clone())
-            })
-            .flatten()
+                    if is_parent && is_fallback && is_linked {
+                        debug!(
+                            "Found Voting Certificate:\n\
+                             ├─ Certificate ID: {}\n\
+                             ├─ Round: {}\n\
+                             └─ Is Linked to Leader: true",
+                            parent.header.id,
+                            parent.virtual_round()
+                        );
+                    }
+                    is_parent && is_fallback && is_linked
+                })
+                .collect::<Vec<_>>();
+                
+            debug!(
+                "Voting Summary:\n\
+                 ├─ Total Voting Certificates: {}\n\
+                 └─ Required Threshold: {}",
+                voting_certs.len(),
+                self.committee.validity_threshold()
+            );
+    
+            return if voting_certs.len() >= self.committee.validity_threshold() as usize {
+                debug!("✓ Fallback Commit Successful");
+                Some(leader.clone())
+            } else {
+                debug!("✗ Fallback Commit Failed - Insufficient Votes");
+                None
+            };
+        }
+    
+        debug!("✗ Fallback Commit Failed - No Leader Found");
+        None
     }
 
     /// Checks if there is a path between two leaders.
