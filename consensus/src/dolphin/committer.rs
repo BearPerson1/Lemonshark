@@ -368,10 +368,12 @@ impl Committer {
         debug!(
             "\n=== Processing Validator Mode Update ===\n\
              Certificate ID: {}\n\
+             Primary ID: {}\n\
              Certificate Round: {}\n\
              Steady Wave: {}\n\
              Fallback Wave: {}", 
             certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
             certificate.virtual_round(),
             steady_wave,
             fallback_wave
@@ -401,9 +403,11 @@ impl Committer {
     
             debug!(
                 "Authority Latest Certificate:\n\
+                 ├─ Primary ID: {}\n\
                  ├─ Certificate ID: {}\n\
                  ├─ Steady Status: {}\n\
                  └─ Fallback Status: {}", 
+                self.committee.get_all_primary_ids()[authority],
                 latest_cert.map_or("No Certificate".to_string(), |id| id.to_string()),
                 steady_status,
                 fallback_status
@@ -420,10 +424,12 @@ impl Committer {
             debug!(
                 "\n=== No Update Needed ===\n\
                  Certificate ID: {}\n\
+                 Primary ID: {}\n\
                  ├─ Round: {}\n\
                  ├─ Steady Wave: {}\n\
                  └─ Fallback Wave: {}",
                 certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
                 certificate.virtual_round(),
                 steady_wave,
                 fallback_wave
@@ -440,10 +446,12 @@ impl Committer {
             debug!(
                 "\n=== Checking Steady State Transition ===\n\
                  Certificate ID: {}\n\
+                 Primary ID: {}\n\
                  ├─ Round: {}\n\
                  ├─ Previous Wave: {}\n\
                  └─ Status: Previously in Steady State",
                 certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
                 certificate.virtual_round(),
                 steady_wave - 1
             );
@@ -453,8 +461,10 @@ impl Committer {
                 debug!(
                     "✓ Steady State Commit Successful\n\
                      ├─ Authority maintaining Steady State\n\
+                     ├─ Leader Primary ID: {}\n\
                      ├─ Leader Certificate ID: {}\n\
                      └─ Leader Round: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
                     leader_cert.header.id,
                     leader_cert.virtual_round()
                 );
@@ -476,10 +486,12 @@ impl Committer {
             debug!(
                 "\n=== Checking Fallback State Transition ===\n\
                  Certificate ID: {}\n\
+                 Primary ID: {}\n\
                  ├─ Round: {}\n\
                  ├─ Previous Wave: {}\n\
                  └─ Status: Previously in Fallback State",
                 certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
                 certificate.virtual_round(),
                 fallback_wave - 1
             );
@@ -489,8 +501,10 @@ impl Committer {
                 debug!(
                     "✓ Fallback Commit Successful\n\
                      ├─ Authority promoting to Steady State\n\
+                     ├─ Leader Primary ID: {}\n\
                      ├─ Leader Certificate ID: {}\n\
                      └─ Leader Round: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
                     leader_cert.header.id,
                     leader_cert.virtual_round()
                 );
@@ -506,9 +520,11 @@ impl Committer {
         debug!(
             "\n=== Defaulting to Fallback State ===\n\
              Certificate ID: {}\n\
+             Primary ID: {}\n\
              ├─ Round: {}\n\
              └─ Wave: {}",
             certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
             certificate.virtual_round(),
             fallback_wave
         );
@@ -520,7 +536,7 @@ impl Committer {
     
         None
     }
-
+    
     fn check_steady_commit(
         &self,
         certificate: &Certificate,
@@ -531,9 +547,11 @@ impl Committer {
         debug!(
             "Initiating Certificate:\n\
              ├─ ID: {}\n\
+             ├─ Primary ID: {}\n\
              ├─ Round: {}\n\
              └─ Wave: {}",
             certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
             certificate.virtual_round(),
             wave
         );
@@ -542,9 +560,11 @@ impl Committer {
             debug!(
                 "Steady Leader Found:\n\
                  ├─ Certificate ID: {}\n\
+                 ├─ Primary ID: {}\n\
                  ├─ Round: {}\n\
                  └─ Wave: {}", 
                 leader.header.id,
+                self.committee.get_all_primary_ids()[&leader.header.author],
                 leader.virtual_round(),
                 wave
             );
@@ -566,9 +586,11 @@ impl Committer {
                         debug!(
                             "Found Voting Certificate:\n\
                              ├─ Certificate ID: {}\n\
+                             ├─ Primary ID: {}\n\
                              ├─ Round: {}\n\
                              └─ Is Linked to Leader: true",
                             parent.header.id,
+                            self.committee.get_all_primary_ids()[&parent.header.author],
                             parent.virtual_round()
                         );
                     }
@@ -596,7 +618,7 @@ impl Committer {
         debug!("✗ Steady Commit Failed - No Leader Found");
         None
     }
-
+    
     fn check_fallback_commit(
         &self,
         certificate: &Certificate,
@@ -607,9 +629,11 @@ impl Committer {
         debug!(
             "Initiating Certificate:\n\
              ├─ ID: {}\n\
+             ├─ Primary ID: {}\n\
              ├─ Round: {}\n\
              └─ Wave: {}",
             certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
             certificate.virtual_round(),
             wave
         );
@@ -618,9 +642,11 @@ impl Committer {
             debug!(
                 "Fallback Leader Found:\n\
                  ├─ Certificate ID: {}\n\
+                 ├─ Primary ID: {}\n\
                  ├─ Round: {}\n\
                  └─ Wave: {}", 
                 leader.header.id,
+                self.committee.get_all_primary_ids()[&leader.header.author],
                 leader.virtual_round(),
                 wave
             );
@@ -642,9 +668,11 @@ impl Committer {
                         debug!(
                             "Found Voting Certificate:\n\
                              ├─ Certificate ID: {}\n\
+                             ├─ Primary ID: {}\n\
                              ├─ Round: {}\n\
                              └─ Is Linked to Leader: true",
                             parent.header.id,
+                            self.committee.get_all_primary_ids()[&parent.header.author],
                             parent.virtual_round()
                         );
                     }

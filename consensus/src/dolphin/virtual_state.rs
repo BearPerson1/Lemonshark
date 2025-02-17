@@ -97,9 +97,7 @@ impl VirtualState {
     /// Returns the certificate (and the certificate's digest) originated by the steady-state leader
     /// of the specified round (if any).
     pub fn steady_leader(&self, wave: Round) -> Option<&(Digest, Certificate)> {
-        #[cfg(test)]
-        let seed = 0;
-        #[cfg(not(test))]
+
         let seed = wave;
 
         // Elect the leader.
@@ -112,6 +110,8 @@ impl VirtualState {
             0 => 0,
             _ => wave * 2 - 1,
         };
+
+        debug!("Supposed leader (Steady): {}, round: {}",(seed as usize % self.committee.size())+1,round);
         self.dag.get(&round).map(|x| x.get(&leader)).flatten()
     }
 
@@ -121,9 +121,7 @@ impl VirtualState {
         // TODO: We should elect the leader of round r-2 using the common coin revealed at round r.
         // At this stage, we are guaranteed to have 2f+1 certificates from round r (which is enough to
         // compute the coin). We currently just use round-robin.
-        #[cfg(test)]
-        let coin = 0;
-        #[cfg(not(test))]
+
         let coin = wave;
 
         // Elect the leader.
@@ -134,8 +132,11 @@ impl VirtualState {
         // Return its certificate and the certificate's digest.
         let round = match wave {
             0 => 0,
-            _ => wave * 2 - 1,
+            _ => wave * 4 - 1,
         };
+
+        debug!("Supposed leader (Fallback): {}, round: {}",(coin as usize % self.committee.size())+1,round);
+        
         self.dag.get(&round).map(|x| x.get(&leader)).flatten()
     }
 
