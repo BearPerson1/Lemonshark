@@ -3,7 +3,7 @@ from json import dump, load
 from collections import OrderedDict
 import random
 from benchmark.utils import Print
-
+import hashlib  
 class ConfigError(Exception):
     pass
 
@@ -66,10 +66,13 @@ class Committee:
 
                 # randomize faulty node
                 # modify these to not randomize them
-        committee_hash = hash(tuple(sorted(self.json['authorities'].keys())))
+        sorted_keys = tuple(sorted(addresses.keys()))
+        hash_input = ','.join(sorted_keys).encode('utf-8')
+        committee_hash = int(hashlib.sha256(hash_input).hexdigest(), 16)
         random.seed(committee_hash)
+    
         available_primary_ids = list(range(1, len(addresses) + 1))
-        random.shuffle(available_primary_ids)  # Shuffle the list in place
+        random.shuffle(available_primary_ids)
 
 
         for i, (name, hosts) in enumerate(addresses.items()): 
