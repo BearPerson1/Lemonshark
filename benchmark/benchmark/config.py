@@ -92,13 +92,14 @@ class Committee:
                     'worker_to_worker': f'{host}:{port + 2}',
                 }
                 port += 3
-
+            temp = available_primary_ids.pop()
             self.json['authorities'][name] = {
                 'stake': 1,
                 'primary': primary_addr,
                 'workers': workers_addr,
-                'primary_id': available_primary_ids.pop()
+                'primary_id': temp
             }
+            Print.info(f'file: {i}-> Primary id: {temp}')
     
     def primary_to_client_addresses(self, faults=0):
         ''' Returns an ordered list of primary-to-client addresses. '''

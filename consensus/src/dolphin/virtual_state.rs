@@ -111,7 +111,7 @@ impl VirtualState {
             _ => wave * 2 - 1,
         };
 
-        debug!("Supposed leader (Steady): {}, round: {}",(seed as usize % self.committee.size())+1,round);
+        debug!("Supposed leader (Steady): {}, round: {}",self.committee.get_primary_id(&leader),round);
         self.dag.get(&round).map(|x| x.get(&leader)).flatten()
     }
 
@@ -135,7 +135,7 @@ impl VirtualState {
             _ => wave * 4 - 1,
         };
 
-        debug!("Supposed leader (Fallback): {}, round: {}",(coin as usize % self.committee.size())+1,round);
+        debug!("Supposed leader (Fallback): {}, round: {}",self.committee.get_primary_id(&leader),round);
         
         self.dag.get(&round).map(|x| x.get(&leader)).flatten()
     }
