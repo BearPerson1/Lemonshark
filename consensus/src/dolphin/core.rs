@@ -343,23 +343,6 @@ impl Dolphin {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
-                        // lemonshark: send it to client
-                        if certificate.header.casual_transaction && certificate.header.author == self.name {
-                            let msg = ClientMessage {
-                                header: certificate.header.clone(),
-                                message_type: 1,  // 1 for Certificate
-                            };
-
-                            if let Err(e) = self.tx_client.send(msg).await {
-                                warn!("Failed to send certificate to client: {}", e);
-                            } else {
-                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
-                                    certificate.header.round,
-                                    certificate.header.shard_num
-                                );
-                            }
-                        }
-
                         // Update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round {
                             self.shard_last_committed_round.insert(certificate.header.shard_num, certificate.header.round);
@@ -405,6 +388,30 @@ impl Dolphin {
                     let name = self.name;
                     let mut committer_clone = self.committer.clone();
                     let causal_transactions_respect_early_finality = self.causal_transactions_respect_early_finality;
+                    let certificate_clone = certificate.clone();
+
+
+                    // send the stuff to the client (causal transactions)
+                    tokio::spawn(async move {
+                        if certificate_clone.header.casual_transaction && certificate_clone.header.author == name {
+                            let msg = ClientMessage {
+                                header: certificate_clone.header.clone(),
+                                message_type: 1,  // 1 for Certificate
+                            };
+                    
+                            if let Err(e) = tx_client_clone.send(msg).await {
+                                warn!("Failed to send certificate to client: {}", e);
+                            } else {
+                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
+                                    certificate_clone.header.round,
+                                    certificate_clone.header.shard_num
+                                );
+                            }
+                        }
+                    });
+
+                    let tx_client_clone = self.tx_client.clone();
+                    let name = self.name;
 
                     tokio::spawn(async move {
                         let early_commit_result = {
@@ -450,6 +457,9 @@ impl Dolphin {
                             let mut state_guard = state_clone.lock().await;
                             state_guard.add_early_committed_certs(certificate.clone());
                         }
+
+
+
                     });
 
 
