@@ -216,8 +216,27 @@ impl Dolphin {
                 ((timer.is_elapsed() || advance_early) && (quorum.is_some() && cert_timeout_expired) || full_quorum)
             );
             
-
- 
+            debug!("Advance early check");
+            advance_early = match self.virtual_round % 2 {
+                0 => {
+                    // we creating header for odd round
+                    self.enough_votes(self.virtual_round, &virtual_state)
+                },
+                _ => {
+                    // we creating header for even round
+                    let fallback_wave = (self.virtual_round + 1) / 4;
+                    let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave)
+                        .map_or(false, |set| set.contains(&self.name));
+            
+                    if in_fallback {
+                        debug!("Outer: Fallback for this round {}", self.virtual_round);
+                        true  // Return true if in fallback
+                    } else {
+                        // Return true if not in fallback but has steady leader
+                        virtual_state.steady_leader((self.virtual_round+1)/2).is_some()
+                    }
+                } 
+            };
 
 
 
@@ -471,42 +490,26 @@ impl Dolphin {
                     // therefore, we might wanna wait abit longer just incase 
 
 
-                    advance_early = match virtual_round % 2 {
+                    advance_early = match self.virtual_round % 2 {
                         0 => {
-                            let current_wave = (virtual_round +1 )/ 2;
-                            
-                            // Get the steady leader for this wave
-                            let steady_leader = virtual_state.steady_leader(current_wave);
-                    
-                            // Check if we have the steady leader's certificate in our current quorum
-                            let have_leader_cert = if let Some((leader_digest, _)) = steady_leader {
-                                virtual_state
-                                    .dag
-                                    .get(&virtual_round)
-                                    .map(|round_certs| {
-                                        round_certs
-                                            .values()
-                                            .any(|(digest, _)| digest == leader_digest)
-                                    })
-                                    .unwrap_or(false)
-                            } else {
-                                false
-                            };
-                            
-                            // not need to wait for leader if we falling back
-                            let fallback_wave = (virtual_round + 1) / 4;
-                            let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave).map_or(false, |set| set.contains(&self.name));
-                    
-                            if have_leader_cert && !in_fallback {
-                                // If we have the steady leader's certificate and not in fallback, advance early
-                                true
-                            } else {
-                                self.enough_votes(virtual_round, &virtual_state) || !advance_early
-                            }
+                            // we creating header for odd round
+                            self.enough_votes(self.virtual_round, &virtual_state)
                         },
-                        _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
+                        _ => {
+                            // we creating header for even round
+                            let fallback_wave = (self.virtual_round + 1) / 4;
+                            let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave)
+                                .map_or(false, |set| set.contains(&self.name));
+                    
+                            if in_fallback {
+                                debug!("Outer: Fallback for this round {}", self.virtual_round);
+                                true  // Return true if in fallback
+                            } else {
+                                // Return true if not in fallback but has steady leader
+                                virtual_state.steady_leader((self.virtual_round+1)/2).is_some()
+                            }
+                        } 
                     };
-
 
 
 
