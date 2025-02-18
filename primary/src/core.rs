@@ -186,8 +186,7 @@ impl Core {
                 debug!(
                     "Buffer for round {} is ready for processing.\n\
                     ├─ Has metadata: {}\n\
-                    ├─ Has quorum: {} ({}/{} needed)\n\
-                    └─ Processing reason: quorum of certificates received",
+                    ├─ Has quorum: {} ({}/{} needed)",
                     round,
                     has_metadata,
                     has_quorum,

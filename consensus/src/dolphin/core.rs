@@ -469,9 +469,11 @@ impl Dolphin {
 
                     // it sort of makes sense that if theres a leader this round, we might want to have it's cert so we can vote on it. 
                     // therefore, we might wanna wait abit longer just incase 
+
+
                     advance_early = match virtual_round % 2 {
                         0 => {
-                            let current_wave = virtual_round / 2;
+                            let current_wave = (virtual_round +1 )/ 2;
                             
                             // Get the steady leader for this wave
                             let steady_leader = virtual_state.steady_leader(current_wave);
@@ -490,9 +492,13 @@ impl Dolphin {
                             } else {
                                 false
                             };
+                            
+                            // not need to wait for leader if we falling back
+                            let fallback_wave = (virtual_round + 1) / 4;
+                            let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave).map_or(false, |set| set.contains(&self.name));
                     
-                            if have_leader_cert {
-                                // If we have the steady leader's certificate, advance early
+                            if have_leader_cert && !in_fallback {
+                                // If we have the steady leader's certificate and not in fallback, advance early
                                 true
                             } else {
                                 self.enough_votes(virtual_round, &virtual_state) || !advance_early
@@ -500,6 +506,9 @@ impl Dolphin {
                         },
                         _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
                     };
+
+
+
 
                     // advance_early = match virtual_round % 2 {
                     //     0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
