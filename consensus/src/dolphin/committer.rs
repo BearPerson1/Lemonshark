@@ -363,7 +363,7 @@ impl Committer {
         state: &mut VirtualState,
     ) -> Option<Certificate> {
         let steady_wave = (certificate.virtual_round() + 1) / 2;
-        let fallback_wave = (certificate.virtual_round() + 1) / 4;
+        let fallback_wave = (certificate.virtual_round()+3) / 4;
         
         debug!(
             "\n=== Processing Validator Mode Update ===\n\
@@ -383,24 +383,24 @@ impl Committer {
         debug!("\n=== Current State of All Validators ===");
         for authority in self.committee.authorities.keys() {
             let steady_status = match state.steady_authorities_sets.get(&steady_wave) {
-                Some(set) if set.contains(authority) => "Active in Steady State",
-                Some(_) => "Not in Steady Set",
-                None => "No Steady State Record",
+                Some(set) if set.contains(authority) => format!("Active in Steady State (Wave {})", steady_wave),
+                Some(_) => "Not in Steady Set".to_string(),
+                None => "No Steady State Record".to_string(),
             };
-    
+        
             let fallback_status = match state.fallback_authorities_sets.get(&fallback_wave) {
-                Some(set) if set.contains(authority) => "Active in Fallback State",
-                Some(_) => "Not in Fallback Set",
-                None => "No Fallback State Record",
+                Some(set) if set.contains(authority) => format!("Active in Fallback State (Wave {})", fallback_wave),
+                Some(_) => "Not in Fallback Set".to_string(),
+                None => "No Fallback State Record".to_string(),
             };
-            
+        
             // Get the latest certificate for this authority
             let latest_cert = state.dag
                 .iter()
                 .filter_map(|(_, certs)| certs.get(authority))
                 .max_by_key(|(_, cert)| cert.header.round)
                 .map(|(_, cert)| cert.header.id.clone());
-    
+        
             debug!(
                 "Authority Latest Certificate:\n\
                  ├─ Primary ID: {}\n\
@@ -495,7 +495,8 @@ impl Committer {
                 certificate.virtual_round(),
                 fallback_wave - 1
             );
-            
+
+                
             let leader = self.check_fallback_commit(certificate, fallback_wave - 1, state);
             if let Some(leader_cert) = &leader {
                 debug!(
@@ -637,7 +638,13 @@ impl Committer {
             certificate.virtual_round(),
             wave
         );
-    
+
+        
+        if certificate.virtual_round() < wave * 4 {
+            debug!("Cert cannot vote for fallback");
+            return None;
+        }
+
         if let Some((_, leader)) = state.fallback_leader(wave) {
             debug!(
                 "Fallback Leader Found:\n\
@@ -653,7 +660,7 @@ impl Committer {
             
             let voting_certs = state
                 .dag
-                .get(&(certificate.virtual_round() - 1))
+                .get(&(leader.virtual_round() + 3))
                 .expect("We should have all the history")
                 .values()
                 .filter(|(digest, parent)| {

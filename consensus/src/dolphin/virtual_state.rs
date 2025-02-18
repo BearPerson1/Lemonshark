@@ -130,9 +130,14 @@ impl VirtualState {
         let leader = keys[coin as usize % self.committee.size()];
 
         // Return its certificate and the certificate's digest.
+        // let round = match wave {
+        //     0 => 0,
+        //     _ => 1 + (wave-1) *4 ,
+        // };
+
         let round = match wave {
             0 => 0,
-            _ => 1 + (wave-1) *4 ,
+            _ => wave*4 -3 ,
         };
 
         debug!("Supposed leader (Fallback): {}, round: {}",self.committee.get_primary_id(&leader),round);
