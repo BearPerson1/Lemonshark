@@ -186,6 +186,7 @@ class LogParser:
 
     def _consensus_latency(self):
         latency = [c - self.proposals[d] for d, c in self.commits.items()]
+        self.plot_cons_latencies(latency)
         return mean(latency) if latency else 0
 
     def _end_to_end_throughput(self):
@@ -198,27 +199,7 @@ class LogParser:
         tps = bps / self.size[0]
         return tps, bps, duration
 
-    def plot_transaction_latencies(self, latencies):
-        """
-        Create a line plot of transaction latencies.
-        """
-        transaction_numbers = range(1, len(latencies) + 1)
-        
-        plt.figure(figsize=(12, 6))
-        plt.plot(transaction_numbers, latencies, '-o', markersize=3, alpha=0.6)
-        plt.title('Transaction Latency Over Time')
-        plt.xlabel('Transaction Number')
-        plt.ylabel('Latency (seconds)')
-        plt.grid(True, alpha=0.3)
-        
-        avg_latency = np.mean(latencies)
-        plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
-                   label=f'Average Latency: {avg_latency:.2f}s')
-        
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('transaction_latencies.png')
-        plt.close()
+
 
     def _end_to_end_latency(self):
         latency = []
@@ -350,7 +331,51 @@ class LogParser:
         
         # Return the average time per transaction across all clients and incomplete status
         return mean(per_tx_times) if per_tx_times else 0, has_incomplete
+    
+    def plot_transaction_latencies(self, latencies):
+        """
+        Create a line plot of transaction latencies.
+        """
+        transaction_numbers = range(1, len(latencies) + 1)
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(transaction_numbers, latencies, '-o', markersize=3, alpha=0.6)
+        plt.title('Transaction Latency Over Time')
+        plt.xlabel('Transaction Number')
+        plt.ylabel('Latency (seconds)')
+        plt.grid(True, alpha=0.3)
+        
+        avg_latency = np.mean(latencies)
+        plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
+                   label=f'Average Latency: {avg_latency:.2f}s')
+        
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig('transaction_latencies.png')
+        plt.close()
 
+
+    def plot_cons_latencies(self, latencies):
+        """
+        Create a line plot of transaction latencies.
+        """
+        transaction_numbers = range(1, len(latencies) + 1)
+        
+        plt.figure(figsize=(12, 6))
+        plt.plot(transaction_numbers, latencies, '-o', markersize=3, alpha=0.6)
+        plt.title('Transaction Latency Over Time')
+        plt.xlabel('Transaction Number')
+        plt.ylabel('Latency (seconds)')
+        plt.grid(True, alpha=0.3)
+        
+        avg_latency = np.mean(latencies)
+        plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
+                   label=f'Average Latency: {avg_latency:.2f}s')
+        
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig('cons_latencies.png')
+        plt.close()
 
     def result(self):
         header_size = self.configs[0]['header_size']

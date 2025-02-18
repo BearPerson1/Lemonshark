@@ -10,24 +10,24 @@ from benchmark.remote import Bench, BenchError
 
 
 @task
-def local(ctx, debug=False):
+def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
-        'faults': 0,
+        'faults': 1,
         'nodes': 10,
         'workers': 1,
         'rate': 10_000,
         'tx_size': 512,
-        'duration': 200,
+        'duration': 30,
         'protocol': 'dolphin',
         'longest_causal_chain':0 # longest chain of causally dependant trans a client will send
     }
     node_params = {
         'timeout': 5_000,  # ms
-        'header_size': 1000,  # bytes
+        'header_size': 50,  # bytes
         'max_header_delay': 200,  # ms
         'gc_depth': 50,  # rounds
-        'sync_retry_delay': 5000,  # ms
+        'sync_retry_delay': 1000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
@@ -43,7 +43,6 @@ def local(ctx, debug=False):
         print(ret.result())
     except BenchError as e:
         Print.error(e)
-
 
 @task
 def create(ctx, nodes=2):

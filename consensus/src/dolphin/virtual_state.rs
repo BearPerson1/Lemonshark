@@ -132,7 +132,7 @@ impl VirtualState {
         // Return its certificate and the certificate's digest.
         let round = match wave {
             0 => 0,
-            _ => wave * 4 - 1,
+            _ => 1 + (wave-1) *4 ,
         };
 
         debug!("Supposed leader (Fallback): {}, round: {}",self.committee.get_primary_id(&leader),round);
