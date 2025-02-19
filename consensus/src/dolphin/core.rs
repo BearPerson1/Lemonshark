@@ -222,6 +222,14 @@ impl Dolphin {
                 advance_early = match self.virtual_round % 2 {
                     0 => {
     
+                        // we creating header for odd (we in even round now)
+                        true
+                    },
+                    _ => {
+                        // we creating header for even (we in odd round now)
+                        // self.enough_votes(self.virtual_round, &virtual_state)
+
+
                         // we creating header for odd
                         let fallback_wave = (self.virtual_round+3)/4;
                         debug!("advance early wave: {}",fallback_wave);
@@ -235,11 +243,6 @@ impl Dolphin {
                             // Return true if not in fallback but has steady leader
                             virtual_state.steady_leader((self.virtual_round+1)/2).is_some() 
                         }
-                    },
-                    _ => {
-                        // we creating header for even
-                        // self.enough_votes(self.virtual_round, &virtual_state)
-                        true
                     } 
                 };
             }
@@ -513,23 +516,27 @@ impl Dolphin {
                         advance_early = match self.virtual_round % 2 {
                             0 => {
             
+                                // we creating header for odd (we in even round now)
+                                true
+                            },
+                            _ => {
+                                // we creating header for even (we in odd round now)
+                                // self.enough_votes(self.virtual_round, &virtual_state)
+        
+        
                                 // we creating header for odd
-                                let fallback_wave = (self.virtual_round +3)/4;
-
+                                let fallback_wave = (self.virtual_round+3)/4;
+                                debug!("advance early wave: {}",fallback_wave);
+        
                                 let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave)
                                     .map_or(false, |set| set.contains(&self.name));
                         
                                 if in_fallback {
-                                    debug!("Outer: Fallback for this round {}", self.virtual_round);
                                     true  // Return true if in fallback
                                 } else {
                                     // Return true if not in fallback but has steady leader
-                                    virtual_state.steady_leader((self.virtual_round+1)/2).is_some()
+                                    virtual_state.steady_leader((self.virtual_round+1)/2).is_some() 
                                 }
-                            },
-                            _ => {
-                                // we creating header for even
-                                true
                             } 
                         };
                     }
