@@ -5,6 +5,8 @@ use crypto::{Digest, Hash as _, PublicKey};
 use log::debug;
 use primary::{Certificate, Round};
 use std::collections::{HashMap, HashSet};
+use sha2::{Sha256, Digest as Sha256Digest};
+use std::convert::TryInto;
 
 /// The virtual consensus state. This state is interpreted from metadata included in the certificates
 /// and can be derived from the real state (`State`).
@@ -122,7 +124,10 @@ impl VirtualState {
         // At this stage, we are guaranteed to have 2f+1 certificates from round r (which is enough to
         // compute the coin). We currently just use round-robin.
 
-        let coin = wave;
+        let mut hasher = Sha256::new();
+        hasher.update(wave.to_le_bytes());
+        let result = hasher.finalize();
+        let coin = u64::from_le_bytes(result[..8].try_into().unwrap());
 
         // Elect the leader.
         let mut keys: Vec<_> = self.committee.authorities.keys().cloned().collect();
