@@ -363,7 +363,7 @@ impl Committer {
         state: &mut VirtualState,
     ) -> Option<Certificate> {
         let steady_wave = (certificate.virtual_round() + 1) / 2;
-        let fallback_wave = (certificate.virtual_round()+3) / 4;
+        let fallback_wave = (certificate.virtual_round()+ 3) / 4;
         
         debug!(
             "\n=== Processing Validator Mode Update ===\n\

@@ -89,11 +89,12 @@ impl VirtualState {
 
     /// Cleanup the internal state after committing a certificate.
     pub fn cleanup(&mut self, last_committed_round: Round, gc_depth: Round) {
+        debug!("CLEANUP IN VIRTUAL_STATE");
         self.dag.retain(|r, _| r + gc_depth > last_committed_round);
         self.steady_authorities_sets
-            .retain(|w, _| w >= &((last_committed_round + 1) / 2));
-        self.fallback_authorities_sets
             .retain(|w, _| w >= &((last_committed_round + 1) / 4));
+        self.fallback_authorities_sets
+            .retain(|w, _| w >= &((last_committed_round + 3) / 8));
     }
 
     /// Returns the certificate (and the certificate's digest) originated by the steady-state leader
