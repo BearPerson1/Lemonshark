@@ -91,10 +91,13 @@ impl VirtualState {
     pub fn cleanup(&mut self, last_committed_round: Round, gc_depth: Round) {
         debug!("CLEANUP IN VIRTUAL_STATE");
         self.dag.retain(|r, _| r + gc_depth > last_committed_round);
+        let min_steady_wave = (last_committed_round + 1) / 2 - gc_depth;
+        let min_fallback_wave = (last_committed_round + 3) / 4 - gc_depth;
         self.steady_authorities_sets
-            .retain(|w, _| w >= &((last_committed_round + 1) / 4));
+            .retain(|w, _| *w >= min_steady_wave.max(0));
+
         self.fallback_authorities_sets
-            .retain(|w, _| w >= &((last_committed_round + 3) / 8));
+            .retain(|w, _| *w >= min_fallback_wave.max(0));
     }
 
     /// Returns the certificate (and the certificate's digest) originated by the steady-state leader
