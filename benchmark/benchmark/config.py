@@ -284,6 +284,9 @@ class NodeParameters:
 
         self.json = json
 
+        self.cross_shard_occurance_rate = float(json['cross_shard_occurance_rate'])
+        self.cross_shard_failure_rate = float(json['cross_shard_failure_rate'])
+
     def print(self, filename):
         assert isinstance(filename, str)
         with open(filename, 'w') as f:

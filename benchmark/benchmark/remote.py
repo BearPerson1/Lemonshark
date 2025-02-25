@@ -366,6 +366,8 @@ class Bench:
                             bench_parameters.collocate,
                             r,
                             bench_parameters.tx_size,
+                            node_parameters.cross_shard_occurance_rate,
+                            node_parameters.cross_shard_failure_rate,
                         ))
                     except (subprocess.SubprocessError, GroupException, ParseError) as e:
                         self.kill(hosts=selected_hosts)
