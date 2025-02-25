@@ -13,12 +13,12 @@ from benchmark.remote import Bench, BenchError
 def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
-        'faults': 1,
-        'nodes': 10,
+        'faults': 0,
+        'nodes': 4,
         'workers': 1,
         'rate': 10_000,
         'tx_size': 512,
-        'duration': 30,
+        'duration': 100,
         'protocol': 'dolphin',
         'longest_causal_chain':0 # longest chain of causally dependant trans a client will send
     }
@@ -35,7 +35,7 @@ def local(ctx, debug=True):
         'cross_shard_failure_rate': 1.0, 
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
-        'cert_timeout': 300 # ms
+        'cert_timeout': 100 # ms
         
     }
     try:

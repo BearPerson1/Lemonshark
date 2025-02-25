@@ -44,8 +44,8 @@ pub struct Proposer {
     round: Round,
     /// Holds the certificates' ids waiting to be included in the next header.
     last_parents: Vec<Digest>,
-    /// Holds the batches' digests waiting to be included in the next header.
-    digests: Vec<(Digest, WorkerId, Option<u64>)>,
+    /// FIFO queue for digests with their sizes
+    digest_queue: VecDeque<(Digest, WorkerId, Option<u64>, usize)>,
     /// Keeps track of the size (in bytes) of batches' digests that we received so far.
     payload_size: usize,
     /// The metadata to include in the next header.
@@ -98,7 +98,7 @@ impl Proposer {
                 //rx_consensus,
                 round: 1,
                 last_parents: genesis,
-                digests: Vec::with_capacity(2 * header_size),
+                digest_queue: VecDeque::new(),
                 payload_size: 0,
                 metadata: VecDeque::new(),
                 committee:committee_clone,
@@ -107,7 +107,6 @@ impl Proposer {
                 cross_shard_failure_rate,
                 causal_transactions_collision_rate,
                 tx_client,
-                
             }
             .run()
             .await;
@@ -163,37 +162,38 @@ impl Proposer {
     }
     
     async fn make_header(&mut self) {
-        // Make a new header.
-  
+        // Get the shard number
         let shard_num = self.determine_shard_num(self.committee.get_primary_id(&self.name), self.round, self.committee.size() as u64);
         let mut causal_transaction:bool = false;
         let mut causal_transaction_id:u64 = 0;
         let mut collision_fail:bool = false;
 
-
-        // lemonshark: Check if this is batch contains a casual transaction
-        let special_txn_ids: Vec<u64> = self.digests.iter()
-        .filter_map(|(_digest, _worker_id, special_id)| *special_id)
-        .collect();
-        // Add more detailed debugging
-        if !special_txn_ids.is_empty() {
-            //todo: delete
-            debug!(
-                "Header for round {} contains {} special transaction(s): {:?}", 
-                self.round,
-                special_txn_ids.len(),
-                special_txn_ids
-            );
-
-            causal_transaction = true;
-            if let Some(&first_id) = special_txn_ids.first() {
-                causal_transaction_id = first_id;
-            }
-            collision_fail = self.determine_causal_collision();
-        }
-        //=============================
-
+        // Take digests from queue until we reach header_size
+        let mut current_size = 0;
+        let mut selected_digests = Vec::new();
         
+        while let Some((digest, worker_id, special_id, size)) = self.digest_queue.pop_front() {
+            if current_size + size > self.header_size {
+                // Put this digest back as it would exceed the size
+                self.digest_queue.push_front((digest, worker_id, special_id, size));
+                break;
+            }
+            
+            current_size += size;
+            
+            // Check for special transaction
+            if let Some(id) = special_id {
+                
+                causal_transaction = true;
+                causal_transaction_id = id;
+                collision_fail = self.determine_causal_collision();
+            }
+            
+            selected_digests.push((digest, worker_id, special_id));
+        }
+
+        // Update payload_size to reflect what's left in the queue
+        self.payload_size = self.digest_queue.iter().map(|(_, _, _, size)| size).sum();
 
         // lemonshark: Shard management
         let mut parents_id_shard = BTreeSet::new();
@@ -217,8 +217,6 @@ impl Proposer {
         {
             debug!("Cross-shard going to shard {}, early fail->{}",cross_shard,early_fail);
         }
-        //=============================
-
 
         // todo: delete
         // some debug statements
@@ -229,12 +227,10 @@ impl Proposer {
             debug!("Header has causal transaction: [causal_txn_id: {}, fail?: {}]",causal_transaction_id,collision_fail);
         }
 
-
-
         let header = Header::new(
             self.name,
             self.round,
-            self.digests.drain(..).map(|(d, w, _)| (d, w)).collect(), // Extract just digest and worker_id
+            selected_digests.into_iter().map(|(d, w, _)| (d, w)).collect(),
             self.last_parents.drain(..).collect(),
             self.metadata.pop_back(),
             &mut self.signature_service,
@@ -267,8 +263,6 @@ impl Proposer {
             info!("Created {} -> {:?}", header, digest);
         }
 
-
-
         // Lemonshark: If this includes a causal transaction, we send our "spec" to the client
         if causal_transaction
         {
@@ -286,8 +280,6 @@ impl Proposer {
             }
         }
         
-        //===================
-
         // Send the new header to the `Core` that will broadcast and process it.
         self.tx_core
             .send(header)
@@ -309,9 +301,13 @@ impl Proposer {
             // 2. We have a quorum of certificates from the previous round and the specified maximum
             // inter-header delay has passed.
             let enough_parents = !self.last_parents.is_empty();
-            let enough_digests = self.payload_size >= self.header_size;
+            let enough_digests = self.digest_queue
+                .iter()
+                .map(|(_, _, _, size)| size)
+                .sum::<usize>() >= self.header_size;
             let timer_expired = timer.is_elapsed();
             let metadata_ready = !self.metadata.is_empty();
+
 
             // // todo remove:
             // if enough_parents {
@@ -325,12 +321,10 @@ impl Proposer {
             //         self.header_size
             //     );
             // }
-            
-            
+
             if (timer_expired || enough_digests) && enough_parents && metadata_ready {
                 // Make a new header.
                 self.make_header().await;
-                self.payload_size = 0;
 
                 // Reschedule the timer.
                 let deadline = Instant::now() + Duration::from_millis(self.max_header_delay);
@@ -338,7 +332,6 @@ impl Proposer {
             }
 
             tokio::select! {
-
                 Some(message) = self.rx_core.recv() => {
                     match message {
                         ProposerMessage::Certificates(parent_certs, round) => {
@@ -406,31 +399,22 @@ impl Proposer {
                     }
                 }
 
-
-
-
-
-
-                
                 Some((digest, worker_id, special_txn_id)) = self.rx_workers.recv() => {
-                    // //todo: delete
+                    //todo: delete
+                    debug!("=== Received Batch from Worker ===");
+                    debug!("Worker ID: {}", worker_id);
+                    debug!("Special Transaction ID: {:?}", special_txn_id);
+                    debug!("Received Digest: {:?}", digest);
+                    debug!("Current Payload Size: {} bytes", self.payload_size);
+                    debug!("Digest Size: {} bytes", digest.size());
+                    debug!("Current Number of Digests: {}", self.digest_queue.len());
+                    
+                    
+                    let digest_size = digest.size();
 
-                    // debug!("=== Received Batch from Worker ===");
-                    // debug!("Worker ID: {}", worker_id);
-                    // debug!("Special Transaction ID: {:?}", special_txn_id);
-                    // debug!("Received Digest: {:?}", digest);
-                    // debug!("Current Payload Size: {} bytes", self.payload_size);
-                    // debug!("Digest Size: {} bytes", digest.size());
-                    // debug!("Current Number of Digests: {}", self.digests.len());
-                   
-
-                    self.payload_size += digest.size();
-
-                    // debug!("Current payload size:{}",self.payload_size);
-                    // debug!("===================================");
-                    self.digests.push((digest, worker_id, special_txn_id));
+                    self.digest_queue.push_back((digest, worker_id, special_txn_id, digest_size));
+                    self.payload_size += digest_size;
                 }
-
                 () = &mut timer => {
                     // Nothing to do.
                 }

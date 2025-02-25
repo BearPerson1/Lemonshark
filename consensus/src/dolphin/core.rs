@@ -183,40 +183,40 @@ impl Dolphin {
             });
 
             //// todo: remove
-            debug!(
-                "=== Header Proposal Condition Check ===\n\
-                 ├─ Timer Status:\n\
-                 │  ├─ Elapsed: {}\n\
-                 │  └─ Max Delay: {} ms\n\
-                 ├─ Certificate Timer Status:\n\
-                 │  ├─ Started: {}\n\
-                 │  ├─ Expired: {}\n\
-                 │  └─ Timeout: {} ms\n\
-                 ├─ Advance Status:\n\
-                 │  ├─ advance_early: {}\n\
-                 │  └─ virtual_round: {}\n\
-                 ├─ Quorum Status:\n\
-                 │  ├─ has_quorum: {}\n\
-                 │  ├─ total_stake: {}\n\
-                 │  └─ threshold: {}\n\
-                 └─ Combined Check: ((elapsed || advance_early) && (has_quorum && cert_timeout_expired) || full_quorum): {}",
-                timer.is_elapsed(),
-                self.timeout,
-                self.cert_timer.is_some(),
-                cert_timeout_expired,
-                self.cert_timeout,
-                advance_early,
-                self.virtual_round,
-                quorum.is_some(),
-                virtual_state.dag.get(&self.virtual_round)
-                    .map_or(0, |round_certs| round_certs.values()
-                        .map(|(_, cert)| self.committee.stake(&cert.origin()))
-                        .sum::<Stake>()),
-                self.committee.quorum_threshold(),
-                ((timer.is_elapsed() || advance_early) && (quorum.is_some() && cert_timeout_expired) || full_quorum)
-            );
+            // debug!(
+            //     "=== Header Proposal Condition Check ===\n\
+            //      ├─ Timer Status:\n\
+            //      │  ├─ Elapsed: {}\n\
+            //      │  └─ Max Delay: {} ms\n\
+            //      ├─ Certificate Timer Status:\n\
+            //      │  ├─ Started: {}\n\
+            //      │  ├─ Expired: {}\n\
+            //      │  └─ Timeout: {} ms\n\
+            //      ├─ Advance Status:\n\
+            //      │  ├─ advance_early: {}\n\
+            //      │  └─ virtual_round: {}\n\
+            //      ├─ Quorum Status:\n\
+            //      │  ├─ has_quorum: {}\n\
+            //      │  ├─ total_stake: {}\n\
+            //      │  └─ threshold: {}\n\
+            //      └─ Combined Check: ((elapsed || advance_early) && (has_quorum && cert_timeout_expired) || full_quorum): {}",
+            //     timer.is_elapsed(),
+            //     self.timeout,
+            //     self.cert_timer.is_some(),
+            //     cert_timeout_expired,
+            //     self.cert_timeout,
+            //     advance_early,
+            //     self.virtual_round,
+            //     quorum.is_some(),
+            //     virtual_state.dag.get(&self.virtual_round)
+            //         .map_or(0, |round_certs| round_certs.values()
+            //             .map(|(_, cert)| self.committee.stake(&cert.origin()))
+            //             .sum::<Stake>()),
+            //     self.committee.quorum_threshold(),
+            //     ((timer.is_elapsed() || advance_early) && (quorum.is_some() && cert_timeout_expired) || full_quorum)
+            // );
             
-            debug!("Advance early check");
+            // debug!("Advance early check");
             if self.virtual_round > 1
             {
                 advance_early = match self.virtual_round % 2 {
@@ -232,7 +232,7 @@ impl Dolphin {
 
                         // we creating header for odd
                         let fallback_wave = (self.virtual_round+3)/4;
-                        debug!("advance early wave: {}",fallback_wave);
+                        //debug!("advance early wave: {}",fallback_wave);
 
                         let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave)
                             .map_or(false, |set| set.contains(&self.name));
@@ -246,7 +246,7 @@ impl Dolphin {
                     } 
                 };
             }
-            debug!("Advance early check for round {}: {}", self.virtual_round, advance_early);
+            //debug!("Advance early check for round {}: {}", self.virtual_round, advance_early);
 
 
 
@@ -510,7 +510,7 @@ impl Dolphin {
                     // it sort of makes sense that if theres a leader this round, we might want to have it's cert so we can vote on it. 
                     // therefore, we might wanna wait abit longer just incase 
 
-                    debug!("[2]Advance early check");
+                    //debug!("[2]Advance early check");
                     if self.virtual_round > 1
                     {
                         advance_early = match self.virtual_round % 2 {
@@ -526,7 +526,7 @@ impl Dolphin {
         
                                 // we creating header for odd
                                 let fallback_wave = (self.virtual_round+3)/4;
-                                debug!("advance early wave: {}",fallback_wave);
+                               // debug!("advance early wave: {}",fallback_wave);
         
                                 let in_fallback = virtual_state.fallback_authorities_sets.get(&fallback_wave)
                                     .map_or(false, |set| set.contains(&self.name));
@@ -547,7 +547,7 @@ impl Dolphin {
                     //     0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
                     //     _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
                     // };
-                    debug!("[2]Advance early check for round {}: {}", self.virtual_round, advance_early);
+                   // debug!("[2]Advance early check for round {}: {}", self.virtual_round, advance_early);
                 },
                 () = &mut select_timer => {
                     // Reset select timer
