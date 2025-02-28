@@ -543,11 +543,11 @@ impl Dolphin {
 
 
 
-                    // advance_early = match virtual_round % 2 {
-                    //     0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
-                    //     _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
-                    // };
-                   // debug!("[2]Advance early check for round {}: {}", self.virtual_round, advance_early);
+                    advance_early = match virtual_round % 2 {
+                        0 => self.enough_votes(virtual_round, &virtual_state) || !advance_early,
+                        _ => virtual_state.steady_leader((virtual_round+1)/2).is_some(),
+                    };
+                   debug!("[2]Advance early check for round {}: {}", self.virtual_round, advance_early);
                 },
                 () = &mut select_timer => {
                     // Reset select timer

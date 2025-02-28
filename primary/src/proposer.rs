@@ -195,6 +195,7 @@ impl Proposer {
         // Update payload_size to reflect what's left in the queue
         self.payload_size = self.digest_queue.iter().map(|(_, _, _, size)| size).sum();
 
+
         // lemonshark: Shard management
         let mut parents_id_shard = BTreeSet::new();
         let (cross_shard,early_fail) : (u64,bool) = self.determine_cross_shard(shard_num);
@@ -207,11 +208,12 @@ impl Proposer {
         }
 
         debug!(
-            "[Primary: {}] Creating header with parents_id_shard: {:?} for round {} shard {}", 
+            "[Primary: {}] Creating header with parents_id_shard: {:?} for round {} shard {}, size: {}", 
             self.committee.get_primary_id(&self.name),
             parents_id_shard,
             self.round,
-            shard_num
+            shard_num, 
+            current_size
         ); 
         if cross_shard != 0
         {
@@ -375,7 +377,7 @@ impl Proposer {
 
                                 // Make a header with current round before advancing
                                 self.make_header().await;
-                                self.payload_size = 0;
+                              //  self.payload_size = 0;
 
                                 debug!("Successfully proposed pre-round-advance header for round {}", self.round);
                             } else {

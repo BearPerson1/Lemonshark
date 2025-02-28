@@ -90,14 +90,37 @@ impl VirtualState {
     /// Cleanup the internal state after committing a certificate.
     pub fn cleanup(&mut self, last_committed_round: Round, gc_depth: Round) {
         debug!("CLEANUP IN VIRTUAL_STATE");
+        // Keep DAG entries as before
         self.dag.retain(|r, _| r + gc_depth > last_committed_round);
-        let min_steady_wave = (last_committed_round + 1) / 2 - gc_depth;
-        let min_fallback_wave = (last_committed_round + 3) / 4 - gc_depth;
+        
+        // Modified calculations for authority sets with safeguards for round 0
+        let min_steady_wave = if last_committed_round > 4 * gc_depth {
+            (last_committed_round + 1) / 2 - 4 * gc_depth
+        } else {
+            0
+        };
+        
+        let min_fallback_wave = if last_committed_round > 2 * gc_depth {
+            (last_committed_round + 3) / 4 - 2 * gc_depth
+        } else {
+            0
+        };
+        
         self.steady_authorities_sets
-            .retain(|w, _| *w >= min_steady_wave.max(0));
-
+            .retain(|w, _| *w >= min_steady_wave);
+    
         self.fallback_authorities_sets
-            .retain(|w, _| *w >= min_fallback_wave.max(0));
+            .retain(|w, _| *w >= min_fallback_wave);
+            
+        debug!(
+            "Virtual State Cleanup: last_committed_round={}, gc_depth={}\n\
+             ├─ Min steady wave kept: {}\n\
+             └─ Min fallback wave kept: {}",
+            last_committed_round,
+            gc_depth,
+            min_steady_wave,
+            min_fallback_wave
+        );
     }
 
     /// Returns the certificate (and the certificate's digest) originated by the steady-state leader
