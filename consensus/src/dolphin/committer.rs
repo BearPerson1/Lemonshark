@@ -768,7 +768,9 @@ impl Committer {
         let mut to_commit = vec![leader.clone()];
         let steady_wave = (leader.virtual_round() + 1) / 2;
         let mut leader = leader;
+        debug!("ORDERING LEADERS");
         for w in (last_committed_wave + 1..steady_wave).rev() {
+            debug!("checking wave: {}",w);
             let (_, v) = state
                 .dag
                 .get(&(2 * w - 1))
@@ -785,6 +787,7 @@ impl Committer {
                 .collect();
 
             let steady_leader = state.steady_leader(w).map(|(_, x)| x);
+            debug!("steady leader wave: {}",w);
             let steady_votes: Stake = steady_leader.map_or_else(
                 || 0,
                 |leader| {
@@ -804,14 +807,15 @@ impl Committer {
                 },
             );
 
-            let fallback_leader = state.fallback_leader(w / 2).map(|(_, x)| x);
+            let fallback_leader = state.fallback_leader((w+1) / 2).map(|(_, x)| x);
+            debug!("fallback leader wave: {}",(w+1)/2);
             let mut fallback_votes: Stake = fallback_leader.map_or_else(
                 || 0,
                 |leader| {
                     votes
                         .iter()
                         .filter(|voter| {
-                            state.fallback_authorities_sets.get(&(w / 2)).map_or_else(
+                            state.fallback_authorities_sets.get(&((w+1)/ 2)).map_or_else(
                                 || false,
                                 |x| {
                                     x.contains(&voter.origin())
