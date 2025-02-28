@@ -1,7 +1,7 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 mod error;
 pub mod receiver;
-mod reliable_sender;
+pub mod reliable_sender;
 pub mod simple_sender;
 
 #[cfg(test)]

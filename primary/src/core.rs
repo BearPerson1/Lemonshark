@@ -552,13 +552,13 @@ impl Core {
     #[async_recursion]
     async fn process_vote(&mut self, vote: Vote) -> DagResult<()> {
         debug!("Processing vote {:?}", vote);
-        // debug!(
-        //     "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
-        //     vote.origin,
-        //     vote.author,
-        //     vote.round,
-        //     vote.id
-        // );
+        debug!(
+            "Vote details:\n Origin: {}\n Target: {}\n Round: {}\n ID: {}",
+            vote.origin,
+            vote.author,
+            vote.round,
+            vote.id
+        );
 
         debug!(
             "Current header state:\n Round: {}\n Author: {}\n ID: {}",
