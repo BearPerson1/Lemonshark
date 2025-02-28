@@ -87,39 +87,38 @@ impl VirtualState {
         ok
     }
 
-    /// Cleanup the internal state after committing a certificate.
     pub fn cleanup(&mut self, last_committed_round: Round, gc_depth: Round) {
         debug!("CLEANUP IN VIRTUAL_STATE");
         // Keep DAG entries as before
         self.dag.retain(|r, _| r + gc_depth > last_committed_round);
         
-        // Modified calculations for authority sets with safeguards for round 0
-        let min_steady_wave = if last_committed_round > 4 * gc_depth {
-            (last_committed_round + 1) / 2 - 4 * gc_depth
-        } else {
-            0
-        };
+        // Calculate the last steady and fallback waves
+        let last_steady_wave = (last_committed_round + 1) / 2;
+        let last_fallback_wave = (last_committed_round + 3) / 4;
         
-        let min_fallback_wave = if last_committed_round > 2 * gc_depth {
-            (last_committed_round + 3) / 4 - 2 * gc_depth
-        } else {
-            0
-        };
-        
+        // For steady authorities, keep waves that are either:
+        // 1. Equal to or greater than the last steady wave minus gc_depth
+        // (This ensures we keep both the last wave and previous gc_depth waves)
         self.steady_authorities_sets
-            .retain(|w, _| *w >= min_steady_wave);
+            .retain(|w, _| *w + gc_depth > last_steady_wave);
     
+        // For fallback authorities, keep waves that are either:
+        // 1. Equal to or greater than the last fallback wave minus gc_depth
         self.fallback_authorities_sets
-            .retain(|w, _| *w >= min_fallback_wave);
+            .retain(|w, _| *w + gc_depth > last_fallback_wave);
             
         debug!(
             "Virtual State Cleanup: last_committed_round={}, gc_depth={}\n\
+             ├─ Last steady wave: {}\n\
              ├─ Min steady wave kept: {}\n\
+             ├─ Last fallback wave: {}\n\
              └─ Min fallback wave kept: {}",
             last_committed_round,
             gc_depth,
-            min_steady_wave,
-            min_fallback_wave
+            last_steady_wave,
+            if gc_depth > last_steady_wave { 0 } else { last_steady_wave - gc_depth },
+            last_fallback_wave,
+            if gc_depth > last_fallback_wave { 0 } else { last_fallback_wave - gc_depth }
         );
     }
 
