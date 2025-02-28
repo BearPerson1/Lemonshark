@@ -27,3 +27,6 @@ workspace.xml
 scripts/build_and_fab
 
 benchmark/settings.json
+benchmark/cons_latencies.png
+benchmark/transaction_details.txt
+benchmark/transaction_latencies.png
