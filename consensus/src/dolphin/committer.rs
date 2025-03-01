@@ -540,14 +540,56 @@ impl Committer {
                     leader_cert.header.id,
                     leader_cert.virtual_round()
                 );
+
+
                 state.steady_authorities_sets
-                    .get_mut(&steady_wave)
-                    .unwrap()
+                    .entry((fallback_wave * 2))
+                    .or_insert_with(HashSet::new)
                     .insert(certificate.origin());
+
+                state.steady_authorities_sets
+                    .entry((fallback_wave * 2)-1)
+                    .or_insert_with(HashSet::new)
+                    .insert(certificate.origin());
+
                 return leader;
             }
-            debug!("✗ Fallback Commit Failed - Will Default to Fallback");
+            debug!("✗ Fallback Commit Failed - Try commit 2nd steady state leader. ");
+            let second_steady_wave = (fallback_wave - 1) * 2  ;
+            let leader2 = self.check_steady_commit(certificate, second_steady_wave , state);
+            if let Some(leader_cert) = &leader2 {
+                debug!(
+                    "✓ 2nd Steady State Commit Successful\n\
+                     ├─ Authority elevating state for this current round\n\
+                     ├─ Leader Primary ID: {}\n\
+                     ├─ Leader Certificate ID: {}\n\
+                     └─ Leader Round: {}\n\
+                     └─ elevated steady wave 1: {}\n\
+                     └─ elevated steady wave 2: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
+                    leader_cert.header.id,
+                    leader_cert.virtual_round(),
+                    fallback_wave * 2,
+                    fallback_wave * 2 - 1
+                );
+
+                // NOTE: inserting into steady_authorities_sets. 
+                // fallback_wave * 2 and fallback_wave*2 - 1. 
+
+                state.steady_authorities_sets
+                    .entry((fallback_wave * 2))
+                    .or_insert_with(HashSet::new)
+                    .insert(certificate.origin());
+
+                state.steady_authorities_sets
+                    .entry((fallback_wave * 2)-1)
+                    .or_insert_with(HashSet::new)
+                    .insert(certificate.origin());
+                return leader2;
+            }
+            debug!("✗ Fallback and 2nd steady state Commit Failed - Defaulting to fallback. ");
         }
+        
     
         debug!(
             "\n=== Defaulting to Fallback State ===\n\

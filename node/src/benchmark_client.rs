@@ -112,9 +112,10 @@ impl ClientMessageHandler {
                         counter: *counter,
                     });
                 }
-
+  // Check if this certificate corresponds to a header we're waiting for
                 if headers.contains_key(&msg.header.causal_transaction_id) {
                     if let Some(min_id) = headers.keys().min() {
+                         // Check if this is the smallest transaction ID in headers
                         debug!("Current minimum transaction ID in headers: {}", min_id);
                         if msg.header.causal_transaction_id == *min_id {
                             debug!("Processing minimum transaction ID certificate");
@@ -122,13 +123,14 @@ impl ClientMessageHandler {
                                 debug!("No collision detected, incrementing confirmed depth to {}", *confirmed + 1);
 
                                 *confirmed += 1;
+                                 //NOTE: for performance check
                                 info!("Finalizing causal-transaction {}",confirmed);
-                                
+                                 // Remove the processed header and add to purged
                                 if let Some(header) = headers.remove(&msg.header.causal_transaction_id) {
                                     purged.insert(header.clone());
                                 }
                                 debug!("Removed header for transaction ID {}", msg.header.causal_transaction_id);
-                                
+                                 // Recursively process any buffered certificates
                                 let mut next_id = msg.header.causal_transaction_id + 1;
                                 debug!("Checking for chained certificates starting from ID {}", next_id);
                                 while let Some(next_cert) = certs.remove(&next_id) {
@@ -138,6 +140,7 @@ impl ClientMessageHandler {
                                             debug!("Processing chained certificate {}, incrementing confirmed depth", next_id);
 
                                             *confirmed += 1;
+                                              //NOTE: for performance check
                                             info!("Finalizing causal-transaction {}",confirmed);
 
                                             if let Some(header) = headers.remove(&next_id) {
@@ -147,6 +150,7 @@ impl ClientMessageHandler {
                                         } else {
                                             debug!("Collision detected in chained certificate {}, purging buffers", next_id);
                                             *confirmed+=1;
+                                              //NOTE: for performance check
                                             info!("Finalizing causal-transaction {}",confirmed);
                                             for header in headers.values() {
                                                 purged.insert(header.clone());
