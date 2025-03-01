@@ -21,8 +21,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd};
 pub mod receiver_tests;
 
 // Constants for buffer sizes
-const TCP_RECV_BUF_SIZE: u32 = 1000_000;  // 2MB receive buffer
-const TCP_SEND_BUF_SIZE: u32 = 1000_000;  // 2MB send buffer
+const TCP_RECV_BUF_SIZE: u32 = 131072;  // 2MB receive buffer
+const TCP_SEND_BUF_SIZE: u32 = 16384;  // 2MB send buffer
 
 /// Convenient alias for the writer end of the TCP channel.
 pub type Writer = SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>;

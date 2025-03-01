@@ -28,8 +28,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd};
 pub mod reliable_sender_tests;
 
 // Constants for buffer sizes
-const TCP_SEND_BUF_SIZE: u32 =  1000_000;  // 2MB send buffer
-const TCP_RECV_BUF_SIZE: u32 =  1000_000;  // 2MB receive buffer for ACKs
+const TCP_SEND_BUF_SIZE: u32 =  131072;  // 2MB send buffer
+const TCP_RECV_BUF_SIZE: u32 =  16384;  // 2MB receive buffer for ACKs
 const CHANNEL_BUFFER_SIZE: usize = 1_000;   // Internal channel buffer size
 
 /// Convenient alias for cancel handlers returned to the caller task.
