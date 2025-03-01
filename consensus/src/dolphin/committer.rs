@@ -587,9 +587,39 @@ impl Committer {
                     .insert(certificate.origin());
                 return leader2;
             }
-            debug!("✗ Fallback and 2nd steady state Commit Failed - Defaulting to fallback. ");
+            debug!("✗ Fallback and 2nd steady state Commit Failed ");
         }
         
+        // this means in the prev 4 round wave:
+        // not in fallback + in the prev 2 round wave, not in steady. 
+        // this means we prob skipped the 1st steady wave of this 4 round wave. 
+        // we update our vote type
+
+        if fallback_wave*2 == certificate.virtual_round() || fallback_wave*2 -1 == certificate.virtual_round()
+        {
+            debug!("Missed round, checking vote type this round");
+            let leader = self.check_fallback_commit(certificate, fallback_wave - 1, state);
+            let second_steady_wave = (fallback_wave - 1) * 2  ;
+            let leader2 = self.check_steady_commit(certificate, second_steady_wave , state);
+            if leader.is_some() || leader2.is_some()
+            {
+                debug!("should have been steady this wave");
+                //means something last round can be committed
+                state.steady_authorities_sets
+                .entry((fallback_wave * 2))
+                .or_insert_with(HashSet::new)
+                .insert(certificate.origin());
+
+                state.steady_authorities_sets
+                    .entry((fallback_wave * 2)-1)
+                    .or_insert_with(HashSet::new)
+                    .insert(certificate.origin());
+                // run it again. 
+                
+                return self.update_validator_mode(certificate, state);
+            }
+        }
+
     
         debug!(
             "\n=== Defaulting to Fallback State ===\n\
