@@ -14,8 +14,8 @@ use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
 use worker::Worker;
 
-use log::{debug, error};
-use network::SimpleSender;
+use log::{debug, error, warn};
+use network::ReliableSender;
 use bytes::Bytes;
 use primary::ClientMessage;
 
@@ -98,8 +98,6 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
 
     // Channels the sequence of certificates.
     let (tx_output, rx_output) = channel(CHANNEL_CAPACITY);
-    
-
 
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
@@ -109,7 +107,6 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_commit, rx_commit) = channel(CHANNEL_CAPACITY);
             let (tx_metadata, rx_metadata) = channel(CHANNEL_CAPACITY);
             let (tx_client_messages, mut rx_client_messages) = channel::<ClientMessage>(CHANNEL_CAPACITY);
-            
 
             #[cfg(not(feature = "dolphin"))]
             {
@@ -132,22 +129,34 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             };
             debug!("Primary to client address: {}", client_address);
     
-            // lemonshark
+            // lemonshark - now using ReliableSender
             tokio::spawn(async move {
-                let mut client_sender = SimpleSender::new();
+                let mut client_sender = ReliableSender::new();
                 
                 while let Some(message) = rx_client_messages.recv().await {
                     let msg = bincode::serialize(&message).unwrap_or_default();
-                    client_sender.send(client_address, Bytes::from(msg)).await;
+                    let cancel_handler = client_sender.send(client_address, Bytes::from(msg)).await;
                     
-                    debug!("Sent message to client:");
-                    debug!("├─ Message Type: {}", if message.message_type == 0 { "Header" } else { "Certificate" });
-                    debug!("├─ Round: {}", message.header.round);
-                    debug!("├─ Author: {}", message.header.author);
-                    debug!("└─ To Address: {}", client_address);
+                    // Handle acknowledgment with timeout
+                    tokio::spawn(async move {
+                        match tokio::time::timeout(std::time::Duration::from_secs(5), cancel_handler).await {
+                            Ok(Ok(_)) => debug!(
+                                "Successfully delivered message to client:\n\
+                                ├─ Message Type: {}\n\
+                                ├─ Round: {}\n\
+                                ├─ Author: {}\n\
+                                └─ To Address: {}",
+                                if message.message_type == 0 { "Header" } else { "Certificate" },
+                                message.header.round,
+                                message.header.author,
+                                client_address
+                            ),
+                            Ok(Err(e)) => warn!("Failed to deliver message to client: {:?}", e),
+                            Err(_) => warn!("Message delivery to client timed out"),
+                        }
+                    });
                 }
             });
-
 
             #[cfg(feature = "dolphin")]
             Dolphin::spawn(
