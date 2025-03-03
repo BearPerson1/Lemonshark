@@ -8,8 +8,8 @@ use crypto::{Digest, PublicKey};
 use futures::future::try_join_all;
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
-use log::{debug, error};
-use network::SimpleSender;
+use log::{debug, error, warn};
+use network::ReliableSender;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -52,7 +52,7 @@ pub struct HeaderWaiter {
     tx_core: Sender<Header>,
 
     /// Network driver allowing to send messages.
-    network: SimpleSender,
+    network: ReliableSender,
     /// Keeps the digests of the all certificates for which we sent a sync request,
     /// along with a timestamp (`u128`) indicating when we sent the request.
     parent_requests: HashMap<Digest, (Round, u128)>,
@@ -88,7 +88,7 @@ impl HeaderWaiter {
                 sync_retry_nodes,
                 rx_synchronizer,
                 tx_core,
-                network: SimpleSender::new(),
+                network: ReliableSender::new(),
                 parent_requests: HashMap::new(),
                 batch_requests: HashMap::new(),
                 pending: HashMap::new(),
@@ -139,7 +139,7 @@ impl HeaderWaiter {
                                 continue;
                             }
 
-                            // Add the header to the waiter pool. The waiter will return it to when all
+                            // Add the header to the waiter pool. The waiter will return it when all
                             // its parents are in the store.
                             let wait_for = missing
                                 .iter()
@@ -169,7 +169,16 @@ impl HeaderWaiter {
                                 let message = PrimaryWorkerMessage::Synchronize(digests, author);
                                 let bytes = bincode::serialize(&message)
                                     .expect("Failed to serialize batch sync request");
-                                self.network.send(address, Bytes::from(bytes)).await;
+                                
+                                // Using ReliableSender with acknowledgment handling
+                                let cancel_handler = self.network.send(address, Bytes::from(bytes)).await;
+                                tokio::spawn(async move {
+                                    match tokio::time::timeout(Duration::from_secs(5), cancel_handler).await {
+                                        Ok(Ok(_)) => (),
+                                        Ok(Err(e)) => warn!("Failed to deliver sync request: {:?}", e),
+                                        Err(_) => warn!("Sync request delivery timed out"),
+                                    }
+                                });
                             }
                         }
 
@@ -217,7 +226,16 @@ impl HeaderWaiter {
                                     .primary_to_primary;
                                 let message = PrimaryMessage::CertificatesRequest(requires_sync, self.name);
                                 let bytes = bincode::serialize(&message).expect("Failed to serialize cert request");
-                                self.network.send(address, Bytes::from(bytes)).await;
+                                
+                                // Using ReliableSender with acknowledgment handling
+                                let cancel_handler = self.network.send(address, Bytes::from(bytes)).await;
+                                tokio::spawn(async move {
+                                    match tokio::time::timeout(Duration::from_secs(5), cancel_handler).await {
+                                        Ok(Ok(_)) => (),
+                                        Ok(Err(e)) => warn!("Failed to deliver cert request: {:?}", e),
+                                        Err(_) => warn!("Cert request delivery timed out"),
+                                    }
+                                });
                             }
                         }
                     }
@@ -256,32 +274,34 @@ impl HeaderWaiter {
                     let mut retry = Vec::new();
                     for (digest, (_, timestamp)) in &self.parent_requests {
                         if timestamp + (self.sync_retry_delay as u128) < now {
-                            /*
-                            if self
-                                .store
-                                .read(digest.to_vec())
-                                .await
-                                .expect("Failed to read from store")
-                                .is_some()
-                            {
-                                self.parent_requests.remove(digest);
-                                continue;
-                            }
-                            */
-
                             debug!("Requesting sync for certificate {} (retry)", digest);
                             retry.push(digest.clone());
                         }
                     }
 
-                    let addresses = self.committee
-                        .others_primaries(&self.name)
-                        .iter()
-                        .map(|(_, x)| x.primary_to_primary)
-                        .collect();
-                    let message = PrimaryMessage::CertificatesRequest(retry, self.name);
-                    let bytes = bincode::serialize(&message).expect("Failed to serialize cert request");
-                    self.network.lucky_broadcast(addresses, Bytes::from(bytes), self.sync_retry_nodes).await;
+                    if !retry.is_empty() {
+                        let addresses = self.committee
+                            .others_primaries(&self.name)
+                            .iter()
+                            .map(|(_, x)| x.primary_to_primary)
+                            .collect();
+                        let message = PrimaryMessage::CertificatesRequest(retry, self.name);
+                        let bytes = bincode::serialize(&message).expect("Failed to serialize cert request");
+                        
+                        // Using ReliableSender's lucky_broadcast with proper acknowledgment handling
+                        let handlers = self.network.lucky_broadcast(addresses, Bytes::from(bytes), self.sync_retry_nodes).await;
+                        
+                        // Handle acknowledgments for all broadcasts
+                        for handler in handlers {
+                            tokio::spawn(async move {
+                                match tokio::time::timeout(Duration::from_secs(5), handler).await {
+                                    Ok(Ok(_)) => (),
+                                    Ok(Err(e)) => warn!("Failed to deliver broadcast request: {:?}", e),
+                                    Err(_) => warn!("Broadcast request delivery timed out"),
+                                }
+                            });
+                        }
+                    }
 
                     // Reschedule the timer.
                     timer.as_mut().reset(Instant::now() + Duration::from_millis(TIMER_RESOLUTION));

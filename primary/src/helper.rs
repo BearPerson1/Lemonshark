@@ -4,9 +4,10 @@ use bytes::Bytes;
 use config::Committee;
 use crypto::{Digest, PublicKey};
 use log::{error, warn};
-use network::SimpleSender;
+use network::ReliableSender;
 use store::Store;
 use tokio::sync::mpsc::Receiver;
+use std::time::Duration;
 
 /// A task dedicated to help other authorities by replying to their certificates requests.
 pub struct Helper {
@@ -17,7 +18,7 @@ pub struct Helper {
     /// Input channel to receive certificates requests.
     rx_primaries: Receiver<(Vec<Digest>, PublicKey)>,
     /// A network sender to reply to the sync requests.
-    network: SimpleSender,
+    network: ReliableSender,
 }
 
 impl Helper {
@@ -31,7 +32,7 @@ impl Helper {
                 committee,
                 store,
                 rx_primaries,
-                network: SimpleSender::new(),
+                network: ReliableSender::new(),
             }
             .run()
             .await;
@@ -60,7 +61,17 @@ impl Helper {
                             .expect("Failed to deserialize our own certificate");
                         let bytes = bincode::serialize(&PrimaryMessage::Certificate(certificate))
                             .expect("Failed to serialize our own certificate");
-                        self.network.send(address, Bytes::from(bytes)).await;
+                        // Using ReliableSender's send method and handling the cancel_handler
+                        let cancel_handler = self.network.send(address, Bytes::from(bytes)).await;
+                        
+                        // Optional: Wait for acknowledgment with timeout
+                        tokio::spawn(async move {
+                            match tokio::time::timeout(Duration::from_secs(5), cancel_handler).await {
+                                Ok(Ok(_)) => (),  // Successfully delivered
+                                Ok(Err(e)) => warn!("Failed to deliver certificate: {:?}", e),
+                                Err(_) => warn!("Certificate delivery timed out"),
+                            }
+                        });
                     }
                     Ok(None) => (),
                     Err(e) => error!("{}", e),
