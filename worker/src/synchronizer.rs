@@ -6,7 +6,7 @@ use crypto::{Digest, PublicKey};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use log::{debug, error};
-use network::SimpleSender;
+use network::ReliableSender;
 use primary::PrimaryWorkerMessage;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,7 +41,7 @@ pub struct Synchronizer {
     /// Input channel to receive the commands from the primary.
     rx_message: Receiver<PrimaryWorkerMessage>,
     /// A network sender to send requests to the other workers.
-    network: SimpleSender,
+    network: ReliableSender,
     /// Loosely keep track of the primary's round number (only used for cleanup).
     round: Round,
     /// Keeps the digests (of batches) that are waiting to be processed by the primary. Their
@@ -72,7 +72,7 @@ impl Synchronizer {
                 sync_retry_delay,
                 sync_retry_nodes,
                 rx_message,
-                network: SimpleSender::new(),
+                network: ReliableSender::new(),
                 round: Round::default(),
                 pending: HashMap::new(),
             }
@@ -155,7 +155,8 @@ impl Synchronizer {
                         };
                         let message = WorkerMessage::BatchRequest(missing, self.name);
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
-                        self.network.send(address, Bytes::from(serialized)).await;
+                        let _handler = self.network.send(address, Bytes::from(serialized)).await;
+                        // Note: We don't need to await the handler here since ReliableSender will handle retries
                     },
                     PrimaryWorkerMessage::Cleanup(round) => {
                         // Keep track of the primary's round number.
@@ -212,9 +213,10 @@ impl Synchronizer {
                             .collect();
                         let message = WorkerMessage::BatchRequest(retry, self.name);
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
-                        self.network
-                            .lucky_broadcast(addresses, Bytes::from(serialized), self.sync_retry_nodes)
+                        let _handlers = self.network
+                            .broadcast(addresses, Bytes::from(serialized))
                             .await;
+                        // Note: ReliableSender's broadcast already handles retries, so we don't need lucky_broadcast
                     }
 
                     // Reschedule the timer.

@@ -3,7 +3,7 @@ use bytes::Bytes;
 use config::{Committee, WorkerId};
 use crypto::{Digest, PublicKey};
 use log::{error, warn};
-use network::SimpleSender;
+use network::ReliableSender;
 use store::Store;
 use tokio::sync::mpsc::Receiver;
 
@@ -22,7 +22,7 @@ pub struct Helper {
     /// Input channel to receive batch requests.
     rx_request: Receiver<(Vec<Digest>, PublicKey)>,
     /// A network sender to send the batches to the other workers.
-    network: SimpleSender,
+    network: ReliableSender,
 }
 
 impl Helper {
@@ -38,7 +38,7 @@ impl Helper {
                 committee,
                 store,
                 rx_request,
-                network: SimpleSender::new(),
+                network: ReliableSender::new(),
             }
             .run()
             .await;
@@ -61,7 +61,9 @@ impl Helper {
             // Reply to the request (the best we can).
             for digest in digests {
                 match self.store.read(digest.to_vec()).await {
-                    Ok(Some(data)) => self.network.send(address, Bytes::from(data)).await,
+                    Ok(Some(data)) => {
+                        let _handler = self.network.send(address, Bytes::from(data)).await;
+                    }
                     Ok(None) => (),
                     Err(e) => error!("{}", e),
                 }

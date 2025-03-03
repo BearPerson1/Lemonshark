@@ -23,8 +23,7 @@ use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
-use network::simple_sender::SimpleSender;
-use tokio::sync::mpsc::UnboundedSender;
+
 
 
 /// The default channel capacity for each channel of the primary.
