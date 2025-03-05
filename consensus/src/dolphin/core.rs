@@ -437,7 +437,7 @@ impl Dolphin {
                                certificate.header.casual_transaction &&
                                certificate.header.author == name {
                                 let mut header = certificate.header.clone();
-                                header.collision_fail = false;
+                                //header.collision_fail = false;
                                 let msg = ClientMessage {
                                     header,
                                     message_type: 1,
