@@ -11,7 +11,7 @@ use log::{debug, log_enabled,warn};
 use std::collections::VecDeque;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet,HashMap};
 use rand::Rng;
 
 use crate::primary::ClientMessage;
@@ -133,30 +133,37 @@ impl Proposer {
     // function to roll a dice to decide if this shard is cross-shard
     // if yes, it takes another shard thats not itself. 
     // currently it just picks a random other 
-    fn determine_cross_shard(&self, shard_num: u64) -> (u64, bool) {
-        // do we cross-shard?
+// function to determine cross-shard targets and their success/failure status
+    fn determine_cross_shard(&self, shard_num: u64) -> HashMap<u64, bool> {
+        let mut cross_shard_map = HashMap::new();
+        
+        // Check if we should do cross-shard operations
         if rand::thread_rng().gen_bool(self.cross_shard_occurance_rate) {
             let mut rng = rand::thread_rng();
-            let mut cross_shard_num = rng.gen_range(1,self.committee.size()) as u64;
             
-            if cross_shard_num == shard_num {
-                cross_shard_num = if cross_shard_num >= self.committee.size() as u64 {
-                    1
-                } else {
-                    cross_shard_num + 1
-                };
+            // Determine how many shards to pick (0 to cross_shard_count)
+            let num_shards_to_pick = rng.gen_range(0, self.cross_shard_count + 1);
+            
+            // Create a vector of possible shard numbers (excluding our own shard)
+            let mut possible_shards: Vec<u64> = (1..=self.committee.size() as u64)
+                .filter(|&x| x != shard_num)
+                .collect();
+                
+            // Shuffle the possible shards
+            for i in (1..possible_shards.len()).rev() {
+                let j = rng.gen_range(0, i + 1);
+                possible_shards.swap(i, j);
             }
-
-            if rand::thread_rng().gen_bool(self.cross_shard_failure_rate) {
-                (cross_shard_num, true)
-            } else {
-                (cross_shard_num, false)
+            
+            // Take the first num_shards_to_pick shards and determine their success/failure
+            for &target_shard in possible_shards.iter().take(num_shards_to_pick as usize) {
+                // For each selected shard, flip a coin to decide success/failure
+                let will_succeed = !rand::thread_rng().gen_bool(self.cross_shard_failure_rate);
+                cross_shard_map.insert(target_shard, will_succeed);
             }
-        } else {
-            // no cross-shard
-            // by default its false. 
-            (0, false)
         }
+        
+        cross_shard_map
     }
 
     // flip coin to see if collision happens. 
@@ -201,7 +208,7 @@ impl Proposer {
 
         // lemonshark: Shard management
         let mut parents_id_shard = BTreeSet::new();
-        let (cross_shard,early_fail) : (u64,bool) = self.determine_cross_shard(shard_num);
+        let cross_shard_map: HashMap<u64, bool> = self.determine_cross_shard(shard_num);
 
         for parent_cert in &self.last_parent_certificates 
         { 
@@ -218,9 +225,8 @@ impl Proposer {
             shard_num, 
             current_size
         ); 
-        if cross_shard != 0
-        {
-            debug!("Cross-shard going to shard {}, early fail->{}",cross_shard,early_fail);
+        if !cross_shard_map.is_empty() {
+            debug!("Cross-shard mappings: {:?}", cross_shard_map);
         }
 
         // todo: delete
@@ -241,8 +247,7 @@ impl Proposer {
             &mut self.signature_service,
             shard_num,
             parents_id_shard, 
-            cross_shard,
-            early_fail,
+            cross_shard_map,
             causal_transaction,
             causal_transaction_id,
             collision_fail,

@@ -104,9 +104,9 @@ impl State {
                         Some(true) => "true",
                         Some(false) => "false"
                     });
-                    if cert.header.cross_shard != 0
+                    if !cert.header.cross_shard.is_empty()
                     {
-                        debug!("│  ├─ Cross-Shard: {}, {}", cert.header.cross_shard,cert.header.early_fail);
+                        debug!("│  ├─ Cross-Shard: {:?}",cert.header.cross_shard);
                     }
                     debug!("│  └─ Parents:");
                     // For each parent, print its information

@@ -5,7 +5,7 @@ use crypto::{Digest, Hash, PublicKey, Signature, SignatureService};
 use ed25519_dalek::Digest as _;
 use ed25519_dalek::Sha512;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet,HashMap};
 use std::convert::TryInto;
 use std::fmt;
 
@@ -55,8 +55,7 @@ pub struct Header {
     // lemonshark
     pub shard_num: u64,
     pub parents_id_shard: BTreeSet<(u64, u64)>,
-    pub cross_shard: u64,
-    pub early_fail: bool,
+    pub cross_shard: HashMap<u64, bool>,
     pub casual_transaction: bool, 
     pub causal_transaction_id: u64,
     pub collision_fail: bool,
@@ -76,8 +75,7 @@ impl Header {
         signature_service: &mut SignatureService,
         shard_num: u64,
         parents_id_shard: BTreeSet<(u64, u64)>,
-        cross_shard: u64,
-        early_fail: bool,
+        cross_shard: HashMap<u64, bool>,
         casual_transaction: bool, 
         causal_transaction_id: u64,
         collision_fail: bool,
@@ -94,7 +92,6 @@ impl Header {
             shard_num,
             parents_id_shard, 
             cross_shard,
-            early_fail,
             casual_transaction, 
             causal_transaction_id,
             collision_fail,

@@ -151,7 +151,7 @@ impl Committer {
     ) {
         debug!("\n=== Starting Safe Block Outcome (SBO) Check ===");
         
-        // Collect and sort rounds
+        // Get all rounds and sort them to process in order
         let rounds: Vec<_> = state.dag.keys().copied().collect();
         let mut sorted_rounds = rounds;
         sorted_rounds.sort();
@@ -160,7 +160,7 @@ impl Committer {
         for round in sorted_rounds {
             debug!("\nProcessing Round: {}", round);
             
-            // Get all certificates for this round and clone them to avoid borrowing issues
+            // Get and clone all certificates for current round to avoid borrow issues
             let certs_to_process: Vec<_> = if let Some(authorities) = state.dag.get(&round) {
                 authorities
                     .iter()
@@ -176,63 +176,92 @@ impl Committer {
                 debug!("├─ Shard: {}", cert.header.shard_num);
                 debug!("├─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
                 debug!("├─ Current SBO: {:?}", cert.header.SBO);
-
-                // Skip if certificate already has an SBO value
+    
+                // Skip if already has SBO
                 if cert.header.SBO.is_some() {
                     debug!("│  └─ Skipping - Certificate already has SBO value");
                     continue;
                 }
                 
+                // Get last committed round for this shard
                 let last_committed_round = shard_last_committed_round
                     .get(&cert.header.shard_num)
                     .copied()
                     .unwrap_or(0);
                 debug!("├─ Last Committed Round for Shard {}: {}", cert.header.shard_num, last_committed_round);
-
+    
+                // Skip if round already committed
                 if cert.header.round <= last_committed_round {
                     debug!("│  └─ Skipping - Certificate round ({}) <= last committed round ({})", 
                            cert.header.round, last_committed_round);
                     continue;
                 }
-
+    
                 let mut new_sbo = None;
     
+                // CASE 1: Certificate is immediately after last committed round
                 if cert.header.round - last_committed_round <= 1 {
                     debug!("│  Certificate is immediately after last committed round");
                     
-                    if cert.header.cross_shard != 0 {
+                    if !cert.header.cross_shard.is_empty() {
                         debug!("│  ├─ Cross-shard certificate detected");
-                        debug!("│  ├─ Target cross-shard: {}", cert.header.cross_shard);
+                        debug!("│  ├─ Target cross-shards: {:?}", cert.header.cross_shard);
                         
                         let cross_shard_parent_round = cert.header.round - 1;
-                        let last_committed_cross_shard_parent_round = shard_last_committed_round
-                            .get(&cert.header.cross_shard)
-                            .copied()
-                            .unwrap_or(0);
-                        debug!("│  ├─ Cross-shard parent round: {}", cross_shard_parent_round);
-                        debug!("│  ├─ Last committed cross-shard round: {}", last_committed_cross_shard_parent_round);
+                        let mut all_cross_shards_valid = true;
+                        
+                        // Check each cross-shard target
+                        for (&target_shard, &expected_success) in &cert.header.cross_shard {
+                            let last_committed_cross_shard_parent_round = shard_last_committed_round
+                                .get(&target_shard)
+                                .copied()
+                                .unwrap_or(0);
+                            
+                            debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
+                            debug!("│  │  ├─ Cross-shard parent round: {}", cross_shard_parent_round);
+                            debug!("│  │  └─ Last committed cross-shard round: {}", last_committed_cross_shard_parent_round);
     
-                        if cross_shard_parent_round - last_committed_cross_shard_parent_round <= 0 || last_committed_cross_shard_parent_round > cross_shard_parent_round{
-                            new_sbo = Some(!cert.header.early_fail);
-                            debug!("│  └─ Setting SBO = {} (based on early_fail)", !cert.header.early_fail);
-                        } else {
-                            debug!("│  ├─ Cross-shard parent not committed, checking parent certificate");
-                            // Get cross-shard parent's SBO
-                            if let Some(prev_authorities) = state.dag.get(&(cert.header.round - 1)) {
-                                for (_, (_, cross_parent)) in prev_authorities {
-                                    if cross_parent.header.shard_num == cert.header.cross_shard {
-                                        new_sbo = cross_parent.header.SBO;
-                                        debug!("│  └─ Setting SBO = {:?} (inherited from cross-shard parent)", new_sbo);
+                            let parent_recently_committed = cross_shard_parent_round == last_committed_cross_shard_parent_round;
+                            let mut parent_sbo_is_true = false;
+    
+                            // Check parent's SBO if it exists
+                            if let Some(prev_authorities) = state.dag.get(&cross_shard_parent_round) {
+                                for (_, (_, parent)) in prev_authorities {
+                                    if parent.header.shard_num == target_shard {
+                                        parent_sbo_is_true = parent.header.SBO == Some(true);
+                                        debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", parent.header.SBO);
                                         break;
                                     }
                                 }
                             }
+    
+                            // Validate cross-shard condition
+                            let shard_valid = (parent_recently_committed || 
+                                             parent_sbo_is_true || 
+                                             cross_shard_parent_round == 0) && 
+                                            expected_success;
+    
+                            if !shard_valid {
+                                all_cross_shards_valid = false;
+                                debug!("│  │  └─ Cross-shard validation failed:");
+                                debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
+                                debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
+                                debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
+                                debug!("│  │     └─ Expected success: {}", expected_success);
+                                break;
+                            }
                         }
+    
+                        new_sbo = Some(all_cross_shards_valid);
+                        debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
+    
                     } else {
                         new_sbo = Some(true);
                         debug!("│  └─ Non cross-shard certificate, setting SBO = true");
                     }
-                } else {
+                } 
+                // CASE 2: Certificate is not immediately after last committed round
+                else {
                     debug!("│  Checking for parent certificate in previous round");
                     let mut found_parent = false;
                     if let Some(prev_authorities) = state.dag.get(&(cert.header.round - 1)) {
@@ -241,54 +270,63 @@ impl Committer {
                                 found_parent = true;
                                 debug!("│  ├─ Found parent certificate with SBO = {:?}", parent.header.SBO);
                                 
+                                // If parent SBO is false, this is also false
                                 if parent.header.SBO == Some(false) {
                                     new_sbo = Some(false);
                                     debug!("│  └─ Parent has SBO = false, setting current SBO = false");
                                     break;
-                                } else if parent.header.SBO == Some(true) {
+                                } 
+                                // If parent SBO is true, check cross-shards
+                                else if parent.header.SBO == Some(true) {
                                     debug!("│  ├─ Parent has SBO = true, checking cross-shard conditions");
-                                    if cert.header.cross_shard != 0 {
-                                        debug!("│  ├─ Certificate has cross-shard reference: {}", cert.header.cross_shard);
+                                    
+                                    if !cert.header.cross_shard.is_empty() {
+                                        debug!("│  ├─ Certificate has cross-shard references: {:?}", cert.header.cross_shard);
+                                        
                                         let cross_shard_parent_round = cert.header.round - 1;
-                                        let last_committed_cross_shard_parent_round = shard_last_committed_round
-                                            .get(&cert.header.cross_shard)
-                                            .copied()
-                                            .unwrap_or(0);
-                                
-                                        debug!("│  ├─ Cross-shard details:");
-                                        debug!("│  │  ├─ Parent round: {}", cross_shard_parent_round);
-                                        debug!("│  │  ├─ Last committed round for shard {}: {}", 
-                                            cert.header.cross_shard, 
-                                            last_committed_cross_shard_parent_round);
-                                        debug!("│  │  └─ Difference: {}", 
-                                            cross_shard_parent_round - last_committed_cross_shard_parent_round);
-                                
-                                        if cross_shard_parent_round - last_committed_cross_shard_parent_round <= 0 || last_committed_cross_shard_parent_round > cross_shard_parent_round{
-                                            new_sbo = Some(!cert.header.early_fail);
-                                            debug!("│  ├─ Cross-shard parent is recently committed");
-                                            debug!("│  ├─ Certificate early_fail status: {}", cert.header.early_fail);
-                                            debug!("│  └─ Setting SBO = {} (based on early_fail)", !cert.header.early_fail);
-                                        } else {
-                                            debug!("│  ├─ Cross-shard parent not recently committed, checking parent certificate");
-                                            let mut found_cross_parent = false;
+                                        let mut all_cross_shards_valid = true;
+    
+                                        for (&target_shard, &expected_success) in &cert.header.cross_shard {
+                                            let last_committed_cross_shard_parent_round = shard_last_committed_round
+                                                .get(&target_shard)
+                                                .copied()
+                                                .unwrap_or(0);
+                                                
+                                            debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
+                                            debug!("│  │  ├─ Parent round: {}", cross_shard_parent_round);
+                                            debug!("│  │  └─ Last committed round: {}", last_committed_cross_shard_parent_round);
+    
+                                            let parent_recently_committed = cross_shard_parent_round == last_committed_cross_shard_parent_round;
+                                            let mut parent_sbo_is_true = false;
+    
+                                            // Check cross-shard parent's SBO
                                             for (_, (_, cross_parent)) in prev_authorities {
-                                                if cross_parent.header.shard_num == cert.header.cross_shard {
-                                                    found_cross_parent = true;
-                                                    debug!("│  ├─ Found cross-shard parent:");
-                                                    debug!("│  │  ├─ Shard: {}", cross_parent.header.shard_num);
-                                                    debug!("│  │  ├─ Round: {}", cross_parent.header.round);
-                                                    debug!("│  │  ├─ Current SBO: {:?}", cross_parent.header.SBO);
-                                                    debug!("│  │  └─ Early fail: {}", cross_parent.header.early_fail);
-                                                    
-                                                    new_sbo = cross_parent.header.SBO;
-                                                    debug!("│  └─ Setting SBO = {:?} (inherited from cross-shard parent)", new_sbo);
+                                                if cross_parent.header.shard_num == target_shard {
+                                                    parent_sbo_is_true = cross_parent.header.SBO == Some(true);
+                                                    debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", cross_parent.header.SBO);
                                                     break;
                                                 }
                                             }
-                                            if !found_cross_parent {
-                                                debug!("│  └─ Warning: Could not find cross-shard parent certificate");
+    
+                                            let shard_valid = (parent_recently_committed || 
+                                                             parent_sbo_is_true || 
+                                                             cross_shard_parent_round == 0) && 
+                                                            expected_success;
+    
+                                            if !shard_valid {
+                                                all_cross_shards_valid = false;
+                                                debug!("│  │  └─ Cross-shard validation failed:");
+                                                debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
+                                                debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
+                                                debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
+                                                debug!("│  │     └─ Expected success: {}", expected_success);
+                                                break;
                                             }
                                         }
+    
+                                        new_sbo = Some(all_cross_shards_valid);
+                                        debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
+    
                                     } else {
                                         new_sbo = Some(true);
                                         debug!("│  └─ Non cross-shard with parent SBO = true, setting SBO = true");
@@ -304,7 +342,7 @@ impl Committer {
                     }
                 }
     
-                // Update the certificate in the state with the new SBO value
+                // Update the certificate's SBO in the state
                 if let Some(authorities) = state.dag.get_mut(&round) {
                     if let Some(&mut (_, ref mut cert_mut)) = authorities.get_mut(&auth_key) {
                         cert_mut.header.SBO = new_sbo;
