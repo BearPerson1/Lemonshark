@@ -16,9 +16,9 @@ def local(ctx, debug=True):
         'faults': 0,
         'nodes': 4,
         'workers': 1,
-        'rate': 10_000,
+        'rate': 30_000,
         'tx_size': 512,
-        'duration': 100,
+        'duration': 30,
         'protocol': 'dolphin',
         'longest_causal_chain':0 # longest chain of causally dependant trans a client will send
     }
@@ -31,11 +31,12 @@ def local(ctx, debug=True):
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
-        'cross_shard_failure_rate': 1.0, 
+        'cross_shard_occurance_rate': 1.0, # how often we do cross-shards, this will affect early commit chances
+        'cross_shard_failure_rate': 0.5, 
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
-        'cert_timeout': 100 # ms
+        'cert_timeout': 100, # ms
+        'cross_shard_count':5
         
     }
     try:
@@ -126,7 +127,8 @@ def remote(ctx, debug=False):
         'cross_shard_failure_rate': 1.0, 
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
-        'cert_timeout': 300 # ms
+        'cert_timeout': 300, # ms
+        'cross_shard_count':1
     }
     try:
         Bench(ctx).run(bench_params, node_params, debug)

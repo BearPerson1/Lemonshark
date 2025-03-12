@@ -88,6 +88,7 @@ pub struct Parameters {
     pub causal_transactions_collision_rate: f64,
     pub causal_transactions_respect_early_finality: bool, 
     pub cert_timeout: u64,
+    pub cross_shard_count:u64,
 }
 
 impl Default for Parameters {
@@ -106,6 +107,7 @@ impl Default for Parameters {
             causal_transactions_collision_rate: 0.0,
             causal_transactions_respect_early_finality: true, 
             cert_timeout: 5000,
+            cross_shard_count:1,
         }
     }
 }
@@ -128,6 +130,7 @@ impl Parameters {
         info!("Causally dependent transaction collision rate set to {:.2}%", self.causal_transactions_collision_rate * 100.0);
         info!("Causal transactions respect early finality: {}", self.causal_transactions_respect_early_finality);
         info!("Certificate timeout set to {} ms", self.cert_timeout);
+        info!("Cross-Shard set to {} shards", self.cross_shard_count);
         
     }
 }

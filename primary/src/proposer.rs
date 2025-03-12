@@ -58,6 +58,7 @@ pub struct Proposer {
     cross_shard_failure_rate: f64,
     causal_transactions_collision_rate: f64,
     tx_client: Sender<ClientMessage>,
+    cross_shard_count: u64,
 }
 
 
@@ -78,6 +79,7 @@ impl Proposer {
         cross_shard_failure_rate: f64,
         causal_transactions_collision_rate: f64,
         tx_client: Sender<ClientMessage>,
+        cross_shard_count: u64,
         
     ) {
         let genesis = Certificate::genesis(committee)
@@ -107,6 +109,7 @@ impl Proposer {
                 cross_shard_failure_rate,
                 causal_transactions_collision_rate,
                 tx_client,
+                cross_shard_count,
             }
             .run()
             .await;
@@ -293,7 +296,6 @@ impl Proposer {
     // Main loop listening to incoming messages.
     pub async fn run(&mut self) {
         debug!("Dag starting at round {}", self.round);
-
         let timer = sleep(Duration::from_millis(self.max_header_delay));
         tokio::pin!(timer);
 
