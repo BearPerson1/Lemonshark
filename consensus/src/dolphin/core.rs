@@ -326,6 +326,12 @@ impl Dolphin {
                         // lemonshark: clean up checked list
                         self.with_state(&state, |state| {
                             state.skipped_certs.clear();
+                            // Reset all SBO values back to None for all certificates in the state
+                            for (_, round_certs) in state.dag.iter_mut() {
+                                for (_, (_digest, cert)) in round_certs.iter_mut() {
+                                    cert.header.SBO = None;
+                                }
+                            }
                         }).await;
                     }
 

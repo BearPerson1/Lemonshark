@@ -99,7 +99,12 @@ impl State {
                     //debug!("│  ├─ Digest: {:?}", digest);
                     debug!("│  ├─ Certificate Round: {}", cert.round());
                     debug!("│  ├─ Shard: {}", cert.header.shard_num);
-                    if (cert.header.cross_shard!=0)
+                    debug!("│  ├─ SBO Status: {}", match cert.header.SBO {
+                        None => "Not Set",
+                        Some(true) => "true",
+                        Some(false) => "false"
+                    });
+                    if cert.header.cross_shard != 0
                     {
                         debug!("│  ├─ Cross-Shard: {}, {}", cert.header.cross_shard,cert.header.early_fail);
                     }

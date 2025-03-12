@@ -88,7 +88,7 @@ impl VirtualState {
     }
 
     pub fn cleanup(&mut self, last_committed_round: Round, gc_depth: Round) {
-        debug!("CLEANUP IN VIRTUAL_STATE");
+       // debug!("CLEANUP IN VIRTUAL_STATE");
         // Keep DAG entries as before
         self.dag.retain(|r, _| r + gc_depth > last_committed_round);
         

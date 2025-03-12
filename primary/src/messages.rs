@@ -60,7 +60,7 @@ pub struct Header {
     pub casual_transaction: bool, 
     pub causal_transaction_id: u64,
     pub collision_fail: bool,
-    pub SBO: bool,
+    pub SBO: Option<bool>,
     
 
 }
@@ -81,7 +81,7 @@ impl Header {
         casual_transaction: bool, 
         causal_transaction_id: u64,
         collision_fail: bool,
-        SBO: bool,
+        SBO: Option<bool>,
     ) -> Self {
         let header = Self {
             author,

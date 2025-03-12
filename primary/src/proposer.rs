@@ -243,7 +243,7 @@ impl Proposer {
             causal_transaction,
             causal_transaction_id,
             collision_fail,
-            false,
+            None,
         )
         .await;
         debug!("Created header {:?}", header);
