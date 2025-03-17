@@ -3,7 +3,7 @@ use crate::error::NetworkError;
 use bytes::Bytes;
 use futures::sink::SinkExt as _;
 use futures::stream::StreamExt as _;
-use log::{info, warn};
+use log::{info, warn,debug};
 use rand::prelude::SliceRandom as _;
 use rand::rngs::SmallRng;
 use rand::SeedableRng as _;
@@ -136,7 +136,6 @@ impl Connection {
         });
     }
 
-    /// Main loop trying to connect to the peer and transmit messages.
     async fn run(&mut self) {
         let mut delay = self.retry_delay;
         let mut retry = 0;
@@ -144,33 +143,48 @@ impl Connection {
             match TcpStream::connect(self.address).await {
                 Ok(stream) => {
                     info!("Outgoing connection established with {}", self.address);
+                    
+                    // Added debug log for buffer state
+                    if !self.buffer.is_empty() {
+                        debug!(
+                            "[{}] Attempting to resend {} buffered messages after connection established",
+                            self.address,
+                            self.buffer.len()
+                        );
+                    }
 
-                    // Reset the delay.
                     delay = self.retry_delay;
                     retry = 0;
 
-                    // Try to transmit all messages in the buffer and keep transmitting incoming messages.
-                    // The following function only returns if there is an error.
                     let error = self.keep_alive(stream).await;
                     warn!("{}", error);
                 }
                 Err(e) => {
                     warn!("{}", NetworkError::FailedToConnect(self.address, retry, e));
+                    debug!(
+                        "[{}] Connection failed. Retry #{}, next attempt in {}ms. Buffered messages: {}",
+                        self.address,
+                        retry,
+                        delay,
+                        self.buffer.len()
+                    );
+                    
                     let timer = sleep(Duration::from_millis(delay));
                     tokio::pin!(timer);
 
                     'waiter: loop {
                         tokio::select! {
-                            // Wait an increasing delay before attempting to reconnect.
                             () = &mut timer => {
                                 delay = min(2*delay, 60_000);
                                 retry += 1;
                                 break 'waiter;
                             },
-
-                            // Drain the channel into the buffer to not saturate the channel and block the caller task.
-                            // The caller is responsible to cleanup the buffer through the cancel handlers.
                             Some(InnerMessage{data, cancel_handler}) = self.receiver.recv() => {
+                                debug!(
+                                    "[{}] New message received while disconnected, adding to buffer. Buffer size: {}",
+                                    self.address,
+                                    self.buffer.len() + 1
+                                );
                                 self.buffer.push_back((data, cancel_handler));
                                 self.buffer.retain(|(_, handler)| !handler.is_closed());
                             }
@@ -181,40 +195,45 @@ impl Connection {
         }
     }
 
-    /// Transmit messages once we have established a connection.
     async fn keep_alive(&mut self, stream: TcpStream) -> NetworkError {
-        // This buffer keeps all messages and handlers that we have successfully transmitted but for
-        // which we are still waiting to receive an ACK.
         let mut pending_replies = VecDeque::new();
-
         let (mut writer, mut reader) = Framed::new(stream, LengthDelimitedCodec::new()).split();
+        
         let error = 'connection: loop {
-            // Try to send all messages of the buffer.
             while let Some((data, handler)) = self.buffer.pop_front() {
-                // Skip messages that have been cancelled.
                 if handler.is_closed() {
+                    debug!("[{}] Skipping cancelled message", self.address);
                     continue;
                 }
 
-                // Try to send the message.
                 match writer.send(data.clone()).await {
                     Ok(()) => {
-                        // The message has been sent, we remove it from the buffer and add it to
-                        // `pending_replies` while we wait for an ACK.
+                        debug!(
+                            "[{}] Message sent, waiting for ACK. Pending replies: {}",
+                            self.address,
+                            pending_replies.len() + 1
+                        );
                         pending_replies.push_back((data, handler));
                     }
                     Err(e) => {
-                        // We failed to send the message, we put it back into the buffer.
+                        debug!(
+                            "[{}] Failed to send message, returning to buffer for retry. Error: {}",
+                            self.address,
+                            e
+                        );
                         self.buffer.push_front((data, handler));
                         break 'connection NetworkError::FailedToSendMessage(self.address, e);
                     }
                 }
             }
 
-            // Check if there are any new messages to send or if we get an ACK for messages we already sent.
             tokio::select! {
                 Some(InnerMessage{data, cancel_handler}) = self.receiver.recv() => {
-                    // Add the message to the buffer of messages to send.
+                    debug!(
+                        "[{}] New message received, adding to send buffer. Buffer size: {}",
+                        self.address,
+                        self.buffer.len() + 1
+                    );
                     self.buffer.push_back((data, cancel_handler));
                 },
                 response = reader.next() => {
@@ -224,12 +243,18 @@ impl Connection {
                     };
                     match response {
                         Some(Ok(bytes)) => {
-                            // Notify the handler that the message has been successfully sent.
+                            debug!(
+                                "[{}] ACK received for message. Remaining pending: {}",
+                                self.address,
+                                pending_replies.len()
+                            );
                             let _ = handler.send(bytes.freeze());
                         },
                         _ => {
-                            // Something has gone wrong (either the channel dropped or we failed to read from it).
-                            // Put the message back in the buffer, we will try to send it again.
+                            debug!(
+                                "[{}] Failed to receive ACK, returning message to buffer for retry",
+                                self.address
+                            );
                             pending_replies.push_front((data, handler));
                             break 'connection NetworkError::FailedToReceiveAck(self.address);
                         }
@@ -238,8 +263,14 @@ impl Connection {
             }
         };
 
-        // If we reach this code, it means something went wrong. Put the messages for which we didn't receive an ACK
-        // back into the sending buffer, we will try to send them again once we manage to establish a new connection.
+        if !pending_replies.is_empty() {
+            debug!(
+                "[{}] Connection error occurred. Moving {} pending messages back to buffer for retry",
+                self.address,
+                pending_replies.len()
+            );
+        }
+        
         while let Some(message) = pending_replies.pop_back() {
             self.buffer.push_front(message);
         }

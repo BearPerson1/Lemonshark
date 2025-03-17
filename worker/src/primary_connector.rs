@@ -1,9 +1,10 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::worker::SerializedBatchDigestMessage;
 use bytes::Bytes;
-use network::SimpleSender;
+use network::ReliableSender;  
 use std::net::SocketAddr;
 use tokio::sync::mpsc::Receiver;
+use log::debug;  // Added for debug logging
 
 // Send batches' digests to the primary.
 pub struct PrimaryConnector {
@@ -11,8 +12,8 @@ pub struct PrimaryConnector {
     primary_address: SocketAddr,
     /// Input channel to receive the digests to send to the primary.
     rx_digest: Receiver<SerializedBatchDigestMessage>,
-    /// A network sender to send the baches' digests to the primary.
-    network: SimpleSender,
+    /// A network sender to send the batches' digests to the primary.
+    network: ReliableSender,  
 }
 
 impl PrimaryConnector {
@@ -21,7 +22,7 @@ impl PrimaryConnector {
             Self {
                 primary_address,
                 rx_digest,
-                network: SimpleSender::new(),
+                network: ReliableSender::new(),  // Changed from 
             }
             .run()
             .await;
@@ -30,10 +31,21 @@ impl PrimaryConnector {
 
     async fn run(&mut self) {
         while let Some(digest) = self.rx_digest.recv().await {
-            // Send the digest through the network.
-            self.network
-                .send(self.primary_address, Bytes::from(digest))
+            // Send the digest through the network and wait for confirmation
+            let bytes = Bytes::from(digest);
+            debug!("Sending batch digest to primary at {}", self.primary_address);
+            
+            // Use the reliable sender and get the cancel handler
+            let handler = self.network
+                .send(self.primary_address, bytes)
                 .await;
+
+            // Wait for the message to be delivered or cancelled
+            if let Ok(_) = handler.await {
+                debug!("Batch digest successfully delivered to primary at {}", self.primary_address);
+            } else {
+                debug!("Failed to deliver batch digest to primary at {}", self.primary_address);
+            }
         }
     }
 }

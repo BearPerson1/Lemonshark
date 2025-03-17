@@ -149,16 +149,16 @@ impl Committer {
         state: &mut State,
         shard_last_committed_round: &mut HashMap<u64, u64>,
     ) {
-        debug!("\n=== Starting Safe Block Outcome (SBO) Check ===");
+        // debug!("\n=== Starting Safe Block Outcome (SBO) Check ===");
         
         // Get all rounds and sort them to process in order
         let rounds: Vec<_> = state.dag.keys().copied().collect();
         let mut sorted_rounds = rounds;
         sorted_rounds.sort();
-        debug!("Processing rounds in order: {:?}", sorted_rounds);
+        // debug!("Processing rounds in order: {:?}", sorted_rounds);
     
         for round in sorted_rounds {
-            debug!("\nProcessing Round: {}", round);
+            // debug!("\nProcessing Round: {}", round);
             
             // Get and clone all certificates for current round to avoid borrow issues
             let certs_to_process: Vec<_> = if let Some(authorities) = state.dag.get(&round) {
@@ -171,15 +171,15 @@ impl Committer {
             };
     
             for (auth_key, _digest, cert) in certs_to_process {
-                debug!("\nChecking Certificate:");
-                debug!("├─ Round: {}", cert.header.round);
-                debug!("├─ Shard: {}", cert.header.shard_num);
-                debug!("├─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
-                debug!("├─ Current SBO: {:?}", cert.header.SBO);
+                // debug!("\nChecking Certificate:");
+                // debug!("├─ Round: {}", cert.header.round);
+                // debug!("├─ Shard: {}", cert.header.shard_num);
+                // debug!("├─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
+                // debug!("├─ Current SBO: {:?}", cert.header.SBO);
     
                 // Skip if already has SBO
                 if cert.header.SBO.is_some() {
-                    debug!("│  └─ Skipping - Certificate already has SBO value");
+                    // debug!("│  └─ Skipping - Certificate already has SBO value");
                     continue;
                 }
                 
@@ -188,12 +188,12 @@ impl Committer {
                     .get(&cert.header.shard_num)
                     .copied()
                     .unwrap_or(0);
-                debug!("├─ Last Committed Round for Shard {}: {}", cert.header.shard_num, last_committed_round);
+                // debug!("├─ Last Committed Round for Shard {}: {}", cert.header.shard_num, last_committed_round);
     
                 // Skip if round already committed
                 if cert.header.round <= last_committed_round {
-                    debug!("│  └─ Skipping - Certificate round ({}) <= last committed round ({})", 
-                           cert.header.round, last_committed_round);
+                    // debug!("│  └─ Skipping - Certificate round ({}) <= last committed round ({})", 
+                    //        cert.header.round, last_committed_round);
                     continue;
                 }
     
@@ -201,11 +201,11 @@ impl Committer {
     
                 // CASE 1: Certificate is immediately after last committed round
                 if cert.header.round - last_committed_round <= 1 {
-                    debug!("│  Certificate is immediately after last committed round");
+                    // debug!("│  Certificate is immediately after last committed round");
                     
                     if !cert.header.cross_shard.is_empty() {
-                        debug!("│  ├─ Cross-shard certificate detected");
-                        debug!("│  ├─ Target cross-shards: {:?}", cert.header.cross_shard);
+                        // debug!("│  ├─ Cross-shard certificate detected");
+                        // debug!("│  ├─ Target cross-shards: {:?}", cert.header.cross_shard);
                         
                         let cross_shard_parent_round = cert.header.round - 1;
                         let mut all_cross_shards_valid = true;
@@ -217,9 +217,9 @@ impl Committer {
                                 .copied()
                                 .unwrap_or(0);
                             
-                            debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
-                            debug!("│  │  ├─ Cross-shard parent round: {}", cross_shard_parent_round);
-                            debug!("│  │  └─ Last committed cross-shard round: {}", last_committed_cross_shard_parent_round);
+                            // debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
+                            // debug!("│  │  ├─ Cross-shard parent round: {}", cross_shard_parent_round);
+                            // debug!("│  │  └─ Last committed cross-shard round: {}", last_committed_cross_shard_parent_round);
     
                             let parent_recently_committed = cross_shard_parent_round == last_committed_cross_shard_parent_round;
                             let mut parent_sbo_is_true = false;
@@ -229,7 +229,7 @@ impl Committer {
                                 for (_, (_, parent)) in prev_authorities {
                                     if parent.header.shard_num == target_shard {
                                         parent_sbo_is_true = parent.header.SBO == Some(true);
-                                        debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", parent.header.SBO);
+                                        // debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", parent.header.SBO);
                                         break;
                                     }
                                 }
@@ -243,45 +243,45 @@ impl Committer {
     
                             if !shard_valid {
                                 all_cross_shards_valid = false;
-                                debug!("│  │  └─ Cross-shard validation failed:");
-                                debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
-                                debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
-                                debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
-                                debug!("│  │     └─ Expected success: {}", expected_success);
+                                // debug!("│  │  └─ Cross-shard validation failed:");
+                                // debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
+                                // debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
+                                // debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
+                                // debug!("│  │     └─ Expected success: {}", expected_success);
                                 break;
                             }
                         }
     
                         new_sbo = Some(all_cross_shards_valid);
-                        debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
+                        // debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
     
                     } else {
                         new_sbo = Some(true);
-                        debug!("│  └─ Non cross-shard certificate, setting SBO = true");
+                        // debug!("│  └─ Non cross-shard certificate, setting SBO = true");
                     }
                 } 
                 // CASE 2: Certificate is not immediately after last committed round
                 else {
-                    debug!("│  Checking for parent certificate in previous round");
+                    // debug!("│  Checking for parent certificate in previous round");
                     let mut found_parent = false;
                     if let Some(prev_authorities) = state.dag.get(&(cert.header.round - 1)) {
                         for (_, (_, parent)) in prev_authorities {
                             if parent.header.shard_num == cert.header.shard_num {
                                 found_parent = true;
-                                debug!("│  ├─ Found parent certificate with SBO = {:?}", parent.header.SBO);
+                                // debug!("│  ├─ Found parent certificate with SBO = {:?}", parent.header.SBO);
                                 
                                 // If parent SBO is false, this is also false
                                 if parent.header.SBO == Some(false) {
                                     new_sbo = Some(false);
-                                    debug!("│  └─ Parent has SBO = false, setting current SBO = false");
+                                    // debug!("│  └─ Parent has SBO = false, setting current SBO = false");
                                     break;
                                 } 
                                 // If parent SBO is true, check cross-shards
                                 else if parent.header.SBO == Some(true) {
-                                    debug!("│  ├─ Parent has SBO = true, checking cross-shard conditions");
+                                    // debug!("│  ├─ Parent has SBO = true, checking cross-shard conditions");
                                     
                                     if !cert.header.cross_shard.is_empty() {
-                                        debug!("│  ├─ Certificate has cross-shard references: {:?}", cert.header.cross_shard);
+                                        // debug!("│  ├─ Certificate has cross-shard references: {:?}", cert.header.cross_shard);
                                         
                                         let cross_shard_parent_round = cert.header.round - 1;
                                         let mut all_cross_shards_valid = true;
@@ -292,9 +292,9 @@ impl Committer {
                                                 .copied()
                                                 .unwrap_or(0);
                                                 
-                                            debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
-                                            debug!("│  │  ├─ Parent round: {}", cross_shard_parent_round);
-                                            debug!("│  │  └─ Last committed round: {}", last_committed_cross_shard_parent_round);
+                                            // debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
+                                            // debug!("│  │  ├─ Parent round: {}", cross_shard_parent_round);
+                                            // debug!("│  │  └─ Last committed round: {}", last_committed_cross_shard_parent_round);
     
                                             let parent_recently_committed = cross_shard_parent_round == last_committed_cross_shard_parent_round;
                                             let mut parent_sbo_is_true = false;
@@ -303,7 +303,7 @@ impl Committer {
                                             for (_, (_, cross_parent)) in prev_authorities {
                                                 if cross_parent.header.shard_num == target_shard {
                                                     parent_sbo_is_true = cross_parent.header.SBO == Some(true);
-                                                    debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", cross_parent.header.SBO);
+                                                    // debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", cross_parent.header.SBO);
                                                     break;
                                                 }
                                             }
@@ -315,21 +315,21 @@ impl Committer {
     
                                             if !shard_valid {
                                                 all_cross_shards_valid = false;
-                                                debug!("│  │  └─ Cross-shard validation failed:");
-                                                debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
-                                                debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
-                                                debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
-                                                debug!("│  │     └─ Expected success: {}", expected_success);
+                                                // debug!("│  │  └─ Cross-shard validation failed:");
+                                                // debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
+                                                // debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
+                                                // debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
+                                                // debug!("│  │     └─ Expected success: {}", expected_success);
                                                 break;
                                             }
                                         }
     
                                         new_sbo = Some(all_cross_shards_valid);
-                                        debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
+                                        // debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
     
                                     } else {
                                         new_sbo = Some(true);
-                                        debug!("│  └─ Non cross-shard with parent SBO = true, setting SBO = true");
+                                        // debug!("│  └─ Non cross-shard with parent SBO = true, setting SBO = true");
                                     }
                                     break;
                                 }
@@ -338,7 +338,7 @@ impl Committer {
                     }
                     if !found_parent {
                         new_sbo = None;
-                        debug!("│  └─ No parent found in previous round, setting SBO = None");
+                        // debug!("│  └─ No parent found in previous round, setting SBO = None");
                     }
                 }
     
@@ -346,12 +346,12 @@ impl Committer {
                 if let Some(authorities) = state.dag.get_mut(&round) {
                     if let Some(&mut (_, ref mut cert_mut)) = authorities.get_mut(&auth_key) {
                         cert_mut.header.SBO = new_sbo;
-                        debug!("└─ Final SBO value: {:?}", new_sbo);
+                        // debug!("└─ Final SBO value: {:?}", new_sbo);
                     }
                 }
             }
         }
-        debug!("\n=== Completed Safe Block Outcome Check ===\n");
+        // debug!("\n=== Completed Safe Block Outcome Check ===\n");
     }
 
     // TODO: Optimize the code abit
@@ -367,9 +367,9 @@ impl Committer {
     
         // f+1 threshold
         let threshold = self.committee.validity_threshold();
-        debug!("\n=== Starting Early Commit Process ===");
-        debug!("Virtual Round: {}", virtual_round);
-        debug!("Validity Threshold: {}", threshold);
+        // debug!("\n=== Starting Early Commit Process ===");
+        // debug!("Virtual Round: {}", virtual_round);
+        // debug!("Validity Threshold: {}", threshold);
     
         // First, update SBO values for all certificates
         self.check_SBO(state, shard_last_committed_round);
@@ -379,7 +379,7 @@ impl Committer {
         let mut sorted_rounds = rounds;
         sorted_rounds.sort(); // Sort rounds in ascending order
         
-        debug!("Processing rounds for early commit: {:?}", sorted_rounds);
+        // debug!("Processing rounds for early commit: {:?}", sorted_rounds);
     
         // Now process certificates for early commit based on their SBO values
         for round in sorted_rounds {
@@ -396,40 +396,40 @@ impl Committer {
             for (auth_key, _digest, cert) in certs_to_process {
                 // Skip if already committed
                 if !state.last_committed.get(&auth_key).map_or(true, |last_round| round > *last_round) {
-                    debug!("Skipping certificate [round:{} shard:{}] - already committed", 
-                           cert.header.round, cert.header.shard_num);
+                    // debug!("Skipping certificate [round:{} shard:{}] - already committed", 
+                    //        cert.header.round, cert.header.shard_num);
                     continue;
                 }
     
                 // Skip if already early committed
                 if state.early_committed_certs.contains(&cert) {
-                    debug!("Skipping certificate [round:{} shard:{}] - already early-committed", 
-                           cert.header.round, cert.header.shard_num);
+                    // debug!("Skipping certificate [round:{} shard:{}] - already early-committed", 
+                    //        cert.header.round, cert.header.shard_num);
                     continue;
                 }
     
                 // Skip if in current virtual round
                 if cert.header.round == virtual_round {
-                    debug!("Skipping certificate [round:{} shard:{}] - in current virtual round", 
-                           cert.header.round, cert.header.shard_num);
+                    // debug!("Skipping certificate [round:{} shard:{}] - in current virtual round", 
+                    //        cert.header.round, cert.header.shard_num);
                     continue;
                 }
     
                 // Only consider certificates with SBO = true
                 if cert.header.SBO == Some(true) {
-                    debug!("Processing certificate with positive SBO:");
-                    debug!("├─ Round: {}", cert.header.round);
-                    debug!("├─ Shard: {}", cert.header.shard_num);
-                    debug!("└─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
+                    // debug!("Processing certificate with positive SBO:");
+                    // debug!("├─ Round: {}", cert.header.round);
+                    // debug!("├─ Shard: {}", cert.header.shard_num);
+                    // debug!("└─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
     
                     // Count certificate children
                     let (child_count, shard_counts) = self.count_certificate_children(&cert, round, state);
                     
-                    debug!("├─ Child count: {}", child_count);
-                    debug!("└─ Required threshold: {}", threshold);
+                    // debug!("├─ Child count: {}", child_count);
+                    // debug!("└─ Required threshold: {}", threshold);
     
                     if child_count >= threshold.into() {
-                        debug!("✓ Certificate meets threshold requirements - adding to sequence");
+                        // debug!("✓ Certificate meets threshold requirements - adding to sequence");
                         
                         // Update state.dag with the modified certificate
                         if let Some(authorities) = state.dag.get_mut(&round) {
@@ -442,8 +442,8 @@ impl Committer {
             }
         }
     
-        debug!("\n=== Completed Early Commit Process ===");
-        debug!("Total certificates in sequence: {}", sequence.len());
+        // debug!("\n=== Completed Early Commit Process ===");
+        // debug!("Total certificates in sequence: {}", sequence.len());
     
         sequence
     }
@@ -516,19 +516,19 @@ impl Committer {
         let steady_wave = (certificate.virtual_round() + 1) / 2;
         let fallback_wave = (certificate.virtual_round()+ 3) / 4;
         
-        // debug!(
-        //     "\n=== Processing Validator Mode Update ===\n\
-        //      Certificate ID: {}\n\
-        //      Primary ID: {}\n\
-        //      Certificate Round: {}\n\
-        //      Steady Wave: {}\n\
-        //      Fallback Wave: {}", 
-        //     certificate.header.id,
-        //     self.committee.get_all_primary_ids()[&certificate.header.author],
-        //     certificate.virtual_round(),
-        //     steady_wave,
-        //     fallback_wave
-        // );
+        debug!(
+            "\n=== Processing Validator Mode Update ===\n\
+             Certificate ID: {}\n\
+             Primary ID: {}\n\
+             Certificate Round: {}\n\
+             Steady Wave: {}\n\
+             Fallback Wave: {}", 
+            certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
+            certificate.virtual_round(),
+            steady_wave,
+            fallback_wave
+        );
 
 
         let prev_in_steady_set = state.steady_authorities_sets
@@ -538,19 +538,19 @@ impl Committer {
         
         // If this is an even steady wave and the authority was in the previous wave's steady set
         if steady_wave % 2 == 0 && prev_in_steady_set {
-            // debug!(
-            //     "\n=== Even Steady Wave Processing ===\n\
-            //     Certificate ID: {}\n\
-            //     Primary ID: {}\n\
-            //     ├─ Round: {}\n\
-            //     ├─ Steady Wave: {} (even)\n\
-            //     └─ Status: Previously in Steady Wave {}",
-            //     certificate.header.id,
-            //     self.committee.get_all_primary_ids()[&certificate.header.author],
-            //     certificate.virtual_round(),
-            //     steady_wave,
-            //     steady_wave - 1
-            // );
+            debug!(
+                "\n=== Even Steady Wave Processing ===\n\
+                Certificate ID: {}\n\
+                Primary ID: {}\n\
+                ├─ Round: {}\n\
+                ├─ Steady Wave: {} (even)\n\
+                └─ Status: Previously in Steady Wave {}",
+                certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
+                certificate.virtual_round(),
+                steady_wave,
+                steady_wave - 1
+            );
             
             // Try to commit the leader of the previous wave
             let leader = self.check_steady_commit(certificate, steady_wave - 1, state);
@@ -562,22 +562,22 @@ impl Committer {
                 .insert(certificate.origin());
             
             if let Some(leader_cert) = &leader {
-                // debug!(
-                //     "✓ Steady State Leader Commit Successful\n\
-                //     ├─ Authority maintaining Steady State\n\
-                //     ├─ Leader Primary ID: {}\n\
-                //     ├─ Leader Certificate ID: {}\n\
-                //     └─ Leader Round: {}",
-                //     self.committee.get_all_primary_ids()[&leader_cert.header.author],
-                //     leader_cert.header.id,
-                //     leader_cert.virtual_round()
-                // );
+                debug!(
+                    "✓ Steady State Leader Commit Successful\n\
+                    ├─ Authority maintaining Steady State\n\
+                    ├─ Leader Primary ID: {}\n\
+                    ├─ Leader Certificate ID: {}\n\
+                    └─ Leader Round: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
+                    leader_cert.header.id,
+                    leader_cert.virtual_round()
+                );
                 return leader;
             } else {
-                // debug!(
-                //     "✗ Steady State Leader Commit Failed\n\
-                //     └─ Still maintaining steady state for authority"
-                // );
+                debug!(
+                    "✗ Steady State Leader Commit Failed\n\
+                    └─ Still maintaining steady state for authority"
+                );
                 return None;
             }
         }
@@ -595,23 +595,23 @@ impl Committer {
             .contains(&certificate.origin());
 
         if in_steady_set || in_fallback_set {
-            // debug!(
-            //     "\n=== No Update Needed ===\n\
-            //     Certificate ID: {}\n\
-            //     Primary ID: {}\n\
-            //     ├─ Round: {}\n\
-            //     ├─ Steady Wave: {}\n\
-            //     ├─ Fallback Wave: {}\n\
-            //     ├─ In Steady Set: {}\n\
-            //     └─ In Fallback Set: {}",
-            //     certificate.header.id,
-            //     self.committee.get_all_primary_ids()[&certificate.header.author],
-            //     certificate.virtual_round(),
-            //     steady_wave,
-            //     fallback_wave,
-            //     in_steady_set,
-            //     in_fallback_set
-            // );
+            debug!(
+                "\n=== No Update Needed ===\n\
+                Certificate ID: {}\n\
+                Primary ID: {}\n\
+                ├─ Round: {}\n\
+                ├─ Steady Wave: {}\n\
+                ├─ Fallback Wave: {}\n\
+                ├─ In Steady Set: {}\n\
+                └─ In Fallback Set: {}",
+                certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
+                certificate.virtual_round(),
+                steady_wave,
+                fallback_wave,
+                in_steady_set,
+                in_fallback_set
+            );
             return None;
         }
 
@@ -625,38 +625,38 @@ impl Committer {
             .or_insert_with(HashSet::new)
             .contains(&certificate.origin())
         {
-            // debug!(
-            //     "\n=== Checking Steady State Transition ===\n\
-            //      Certificate ID: {}\n\
-            //      Primary ID: {}\n\
-            //      ├─ Round: {}\n\
-            //      ├─ Previous Wave: {}\n\
-            //      └─ Status: Previously in Steady State",
-            //     certificate.header.id,
-            //     self.committee.get_all_primary_ids()[&certificate.header.author],
-            //     certificate.virtual_round(),
-            //     steady_wave - 1
-            // );
+            debug!(
+                "\n=== Checking Steady State Transition ===\n\
+                 Certificate ID: {}\n\
+                 Primary ID: {}\n\
+                 ├─ Round: {}\n\
+                 ├─ Previous Wave: {}\n\
+                 └─ Status: Previously in Steady State",
+                certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
+                certificate.virtual_round(),
+                steady_wave - 1
+            );
             
             let leader = self.check_steady_commit(certificate, steady_wave - 1, state);
             if let Some(leader_cert) = &leader {
-                // debug!(
-                //     "✓ 2nd Steady State Commit Successful\n\
-                //      ├─ Authority maintaining Steady State\n\
-                //      ├─ Leader Primary ID: {}\n\
-                //      ├─ Leader Certificate ID: {}\n\
-                //      └─ Leader Round: {}",
-                //     self.committee.get_all_primary_ids()[&leader_cert.header.author],
-                //     leader_cert.header.id,
-                //     leader_cert.virtual_round()
-                // );
+                debug!(
+                    "✓ 2nd Steady State Commit Successful\n\
+                     ├─ Authority maintaining Steady State\n\
+                     ├─ Leader Primary ID: {}\n\
+                     ├─ Leader Certificate ID: {}\n\
+                     └─ Leader Round: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
+                    leader_cert.header.id,
+                    leader_cert.virtual_round()
+                );
                 state.steady_authorities_sets
                     .get_mut(&steady_wave)
                     .unwrap()
                     .insert(certificate.origin());
                 return leader;
             }
-            // debug!("✗ Steady State Commit Failed - Will Check Fallback");
+            debug!("✗ Steady State Commit Failed - Will Check Fallback");
         }
     
         // Check fallback state transition
@@ -665,32 +665,32 @@ impl Committer {
             .or_insert_with(HashSet::new)
             .contains(&certificate.origin())
         {
-            // debug!(
-            //     "\n=== Checking Fallback State Transition ===\n\
-            //      Certificate ID: {}\n\
-            //      Primary ID: {}\n\
-            //      ├─ Round: {}\n\
-            //      ├─ Previous Wave: {}\n\
-            //      └─ Status: Previously in Fallback State",
-            //     certificate.header.id,
-            //     self.committee.get_all_primary_ids()[&certificate.header.author],
-            //     certificate.virtual_round(),
-            //     fallback_wave - 1
-            // );
+            debug!(
+                "\n=== Checking Fallback State Transition ===\n\
+                 Certificate ID: {}\n\
+                 Primary ID: {}\n\
+                 ├─ Round: {}\n\
+                 ├─ Previous Wave: {}\n\
+                 └─ Status: Previously in Fallback State",
+                certificate.header.id,
+                self.committee.get_all_primary_ids()[&certificate.header.author],
+                certificate.virtual_round(),
+                fallback_wave - 1
+            );
 
                 
             let leader = self.check_fallback_commit(certificate, fallback_wave - 1, state);
             if let Some(leader_cert) = &leader {
-                // debug!(
-                //     "✓ Fallback Commit Successful\n\
-                //      ├─ Authority promoting to Steady State\n\
-                //      ├─ Leader Primary ID: {}\n\
-                //      ├─ Leader Certificate ID: {}\n\
-                //      └─ Leader Round: {}",
-                //     self.committee.get_all_primary_ids()[&leader_cert.header.author],
-                //     leader_cert.header.id,
-                //     leader_cert.virtual_round()
-                // );
+                debug!(
+                    "✓ Fallback Commit Successful\n\
+                     ├─ Authority promoting to Steady State\n\
+                     ├─ Leader Primary ID: {}\n\
+                     ├─ Leader Certificate ID: {}\n\
+                     └─ Leader Round: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
+                    leader_cert.header.id,
+                    leader_cert.virtual_round()
+                );
 
 
                 state.steady_authorities_sets
@@ -705,24 +705,24 @@ impl Committer {
 
                 return leader;
             }
-            // debug!("✗ Fallback Commit Failed - Try commit 2nd steady state leader. ");
+            debug!("✗ Fallback Commit Failed - Try commit 2nd steady state leader. ");
             let second_steady_wave = (fallback_wave - 1) * 2  ;
             let leader2 = self.check_steady_commit(certificate, second_steady_wave , state);
             if let Some(leader_cert) = &leader2 {
-                // debug!(
-                //     "✓ 2nd Steady State Commit Successful\n\
-                //      ├─ Authority elevating state for this current round\n\
-                //      ├─ Leader Primary ID: {}\n\
-                //      ├─ Leader Certificate ID: {}\n\
-                //      └─ Leader Round: {}\n\
-                //      └─ elevated steady wave 1: {}\n\
-                //      └─ elevated steady wave 2: {}",
-                //     self.committee.get_all_primary_ids()[&leader_cert.header.author],
-                //     leader_cert.header.id,
-                //     leader_cert.virtual_round(),
-                //     fallback_wave * 2,
-                //     fallback_wave * 2 - 1
-                // );
+                debug!(
+                    "✓ 2nd Steady State Commit Successful\n\
+                     ├─ Authority elevating state for this current round\n\
+                     ├─ Leader Primary ID: {}\n\
+                     ├─ Leader Certificate ID: {}\n\
+                     └─ Leader Round: {}\n\
+                     └─ elevated steady wave 1: {}\n\
+                     └─ elevated steady wave 2: {}",
+                    self.committee.get_all_primary_ids()[&leader_cert.header.author],
+                    leader_cert.header.id,
+                    leader_cert.virtual_round(),
+                    fallback_wave * 2,
+                    fallback_wave * 2 - 1
+                );
 
                 // NOTE: inserting into steady_authorities_sets. 
                 // fallback_wave * 2 and fallback_wave*2 - 1. 
@@ -738,7 +738,7 @@ impl Committer {
                     .insert(certificate.origin());
                 return leader2;
             }
-            // debug!("✗ Fallback and 2nd steady state Commit Failed ");
+            debug!("✗ Fallback and 2nd steady state Commit Failed ");
         }
         
         // this means in the prev 4 round wave:
@@ -748,7 +748,7 @@ impl Committer {
 
         if fallback_wave*2 == certificate.virtual_round() || fallback_wave*2 -1 == certificate.virtual_round()
         {
-            // debug!("Missed round, checking vote type this round");
+            debug!("Missed round, checking vote type this round");
             let leader = self.check_fallback_commit(certificate, fallback_wave - 1, state);
             let second_steady_wave = (fallback_wave - 1) * 2  ;
             let leader2 = self.check_steady_commit(certificate, second_steady_wave , state);
@@ -772,17 +772,17 @@ impl Committer {
         }
 
     
-        // debug!(
-        //     "\n=== Defaulting to Fallback State ===\n\
-        //      Certificate ID: {}\n\
-        //      Primary ID: {}\n\
-        //      ├─ Round: {}\n\
-        //      └─ Wave: {}",
-        //     certificate.header.id,
-        //     self.committee.get_all_primary_ids()[&certificate.header.author],
-        //     certificate.virtual_round(),
-        //     fallback_wave
-        // );
+        debug!(
+            "\n=== Defaulting to Fallback State ===\n\
+             Certificate ID: {}\n\
+             Primary ID: {}\n\
+             ├─ Round: {}\n\
+             └─ Wave: {}",
+            certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
+            certificate.virtual_round(),
+            fallback_wave
+        );
         
         state.fallback_authorities_sets
             .get_mut(&fallback_wave)
@@ -799,30 +799,30 @@ impl Committer {
         state: &VirtualState,
     ) -> Option<Certificate> {
         debug!("\n=== Checking Steady Commit ===");
-        // debug!(
-        //     "Initiating Certificate:\n\
-        //      ├─ ID: {}\n\
-        //      ├─ Primary ID: {}\n\
-        //      ├─ Round: {}\n\
-        //      └─ Wave: {}",
-        //     certificate.header.id,
-        //     self.committee.get_all_primary_ids()[&certificate.header.author],
-        //     certificate.virtual_round(),
-        //     wave
-        // );
+        debug!(
+            "Initiating Certificate:\n\
+             ├─ ID: {}\n\
+             ├─ Primary ID: {}\n\
+             ├─ Round: {}\n\
+             └─ Wave: {}",
+            certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
+            certificate.virtual_round(),
+            wave
+        );
     
         if let Some((_, leader)) = state.steady_leader(wave) {
-            // debug!(
-            //     "Steady Leader Found:\n\
-            //      ├─ Certificate ID: {}\n\
-            //      ├─ Primary ID: {}\n\
-            //      ├─ Round: {}\n\
-            //      └─ Wave: {}", 
-            //     leader.header.id,
-            //     self.committee.get_all_primary_ids()[&leader.header.author],
-            //     leader.virtual_round(),
-            //     wave
-            // );
+            debug!(
+                "Steady Leader Found:\n\
+                 ├─ Certificate ID: {}\n\
+                 ├─ Primary ID: {}\n\
+                 ├─ Round: {}\n\
+                 └─ Wave: {}", 
+                leader.header.id,
+                self.committee.get_all_primary_ids()[&leader.header.author],
+                leader.virtual_round(),
+                wave
+            );
             
             let voting_certs = state
                 .dag
@@ -838,39 +838,39 @@ impl Committer {
                     let is_linked = self.strong_path(parent, leader, &state.dag);
                     
                     if is_parent && is_steady && is_linked {
-                        // debug!(
-                        //     "Found Voting Certificate:\n\
-                        //      ├─ Certificate ID: {}\n\
-                        //      ├─ Primary ID: {}\n\
-                        //      ├─ Round: {}\n\
-                        //      └─ Is Linked to Leader: true",
-                        //     parent.header.id,
-                        //     self.committee.get_all_primary_ids()[&parent.header.author],
-                        //     parent.virtual_round()
-                        // );
+                        debug!(
+                            "Found Voting Certificate:\n\
+                             ├─ Certificate ID: {}\n\
+                             ├─ Primary ID: {}\n\
+                             ├─ Round: {}\n\
+                             └─ Is Linked to Leader: true",
+                            parent.header.id,
+                            self.committee.get_all_primary_ids()[&parent.header.author],
+                            parent.virtual_round()
+                        );
                     }
                     is_parent && is_steady && is_linked
                 })
                 .collect::<Vec<_>>();
                 
-            // debug!(
-            //     "Voting Summary:\n\
-            //      ├─ Total Voting Certificates: {}\n\
-            //      └─ Required Threshold: {}",
-            //     voting_certs.len(),
-            //     self.committee.validity_threshold()
-            // );
+            debug!(
+                "Voting Summary:\n\
+                 ├─ Total Voting Certificates: {}\n\
+                 └─ Required Threshold: {}",
+                voting_certs.len(),
+                self.committee.validity_threshold()
+            );
     
             return if voting_certs.len() >= self.committee.validity_threshold() as usize {
-                // debug!("✓ Steady Commit Successful");
+                debug!("✓ Steady Commit Successful");
                 Some(leader.clone())
             } else {
-                // debug!("✗ Steady Commit Failed - Insufficient Votes");
+                debug!("✗ Steady Commit Failed - Insufficient Votes");
                 None
             };
         }
     
-        // debug!("✗ Steady Commit Failed - No Leader Found");
+        debug!("✗ Steady Commit Failed - No Leader Found");
         None
     }
     
@@ -881,17 +881,17 @@ impl Committer {
         state: &VirtualState,
     ) -> Option<Certificate> {
          debug!("\n=== Checking Fallback Commit ===");
-        // debug!(
-        //     "Initiating Certificate:\n\
-        //      ├─ ID: {}\n\
-        //      ├─ Primary ID: {}\n\
-        //      ├─ Round: {}\n\
-        //      └─ Wave: {}",
-        //     certificate.header.id,
-        //     self.committee.get_all_primary_ids()[&certificate.header.author],
-        //     certificate.virtual_round(),
-        //     wave
-        // );
+        debug!(
+            "Initiating Certificate:\n\
+             ├─ ID: {}\n\
+             ├─ Primary ID: {}\n\
+             ├─ Round: {}\n\
+             └─ Wave: {}",
+            certificate.header.id,
+            self.committee.get_all_primary_ids()[&certificate.header.author],
+            certificate.virtual_round(),
+            wave
+        );
 
         
         if certificate.virtual_round() < wave * 4 {
@@ -900,17 +900,17 @@ impl Committer {
         }
 
         if let Some((_, leader)) = state.fallback_leader(wave) {
-            // debug!(
-            //     "Fallback Leader Found:\n\
-            //      ├─ Certificate ID: {}\n\
-            //      ├─ Primary ID: {}\n\
-            //      ├─ Round: {}\n\
-            //      └─ Wave: {}", 
-            //     leader.header.id,
-            //     self.committee.get_all_primary_ids()[&leader.header.author],
-            //     leader.virtual_round(),
-            //     wave
-            // );
+            debug!(
+                "Fallback Leader Found:\n\
+                 ├─ Certificate ID: {}\n\
+                 ├─ Primary ID: {}\n\
+                 ├─ Round: {}\n\
+                 └─ Wave: {}", 
+                leader.header.id,
+                self.committee.get_all_primary_ids()[&leader.header.author],
+                leader.virtual_round(),
+                wave
+            );
             
             let voting_certs = state
                 .dag
@@ -926,34 +926,34 @@ impl Committer {
                     let is_linked = self.strong_path(parent, leader, &state.dag);
                     
                     if is_parent && is_fallback && is_linked {
-                        // debug!(
-                        //     "Found Voting Certificate:\n\
-                        //      ├─ Certificate ID: {}\n\
-                        //      ├─ Primary ID: {}\n\
-                        //      ├─ Round: {}\n\
-                        //      └─ Is Linked to Leader: true",
-                        //     parent.header.id,
-                        //     self.committee.get_all_primary_ids()[&parent.header.author],
-                        //     parent.virtual_round()
-                        // );
+                        debug!(
+                            "Found Voting Certificate:\n\
+                             ├─ Certificate ID: {}\n\
+                             ├─ Primary ID: {}\n\
+                             ├─ Round: {}\n\
+                             └─ Is Linked to Leader: true",
+                            parent.header.id,
+                            self.committee.get_all_primary_ids()[&parent.header.author],
+                            parent.virtual_round()
+                        );
                     }
                     is_parent && is_fallback && is_linked
                 })
                 .collect::<Vec<_>>();
                 
-            // debug!(
-            //     "Voting Summary:\n\
-            //      ├─ Total Voting Certificates: {}\n\
-            //      └─ Required Threshold: {}",
-            //     voting_certs.len(),
-            //     self.committee.validity_threshold()
-            // );
+            debug!(
+                "Voting Summary:\n\
+                 ├─ Total Voting Certificates: {}\n\
+                 └─ Required Threshold: {}",
+                voting_certs.len(),
+                self.committee.validity_threshold()
+            );
     
             return if voting_certs.len() >= self.committee.validity_threshold() as usize {
-                // debug!("✓ Fallback Commit Successful");
+                debug!("✓ Fallback Commit Successful");
                 Some(leader.clone())
             } else {
-                // debug!("✗ Fallback Commit Failed - Insufficient Votes");
+                debug!("✗ Fallback Commit Failed - Insufficient Votes");
                 None
             };
         }

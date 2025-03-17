@@ -253,8 +253,8 @@ struct PrimaryReceiverHandler {
 #[async_trait]
 impl MessageHandler for PrimaryReceiverHandler {
     async fn dispatch(&self, writer: &mut Writer, serialized: Bytes) -> Result<(), Box<dyn Error>> {
-        // Reply with an ACK.
-        let _ = writer.send(Bytes::from("Ack")).await;
+        
+        
 
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized).map_err(DagError::SerializationError)? {
@@ -269,6 +269,8 @@ impl MessageHandler for PrimaryReceiverHandler {
                 .await
                 .expect("Failed to send certificate"),
         }
+        // Reply with an ACK.
+        let _ = writer.send(Bytes::from("Ack")).await;
         Ok(())
     }
 }
@@ -284,22 +286,27 @@ struct WorkerReceiverHandler {
 impl MessageHandler for WorkerReceiverHandler {
     async fn dispatch(
         &self,
-        _writer: &mut Writer,
+        writer: &mut Writer,
         serialized: Bytes,
     ) -> Result<(), Box<dyn Error>> {
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized).map_err(DagError::SerializationError)? {
-            WorkerPrimaryMessage::OurBatch(digest, worker_id, special_txn_id) => self
-                .tx_our_digests
-                .send((digest, worker_id, special_txn_id))
-                .await
-                .expect("Failed to send workers' digests"),
-            WorkerPrimaryMessage::OthersBatch(digest, worker_id) => self
-                .tx_others_digests
-                .send((digest, worker_id))
-                .await
-                .expect("Failed to send workers' digests"),
+            WorkerPrimaryMessage::OurBatch(digest, worker_id, special_txn_id) => {
+                self.tx_our_digests
+                    .send((digest, worker_id, special_txn_id))
+                    .await
+                    .map_err(|e| DagError::ProposerSendError(format!("Failed to send our digest: {}", e)))?;
+            }
+            WorkerPrimaryMessage::OthersBatch(digest, worker_id) => {
+                self.tx_others_digests
+                    .send((digest, worker_id))
+                    .await
+                    .map_err(|e| DagError::ProposerSendError(format!("Failed to send others digest: {}", e)))?;
+            }
         }
+
+        // Send acknowledgment after successful processing
+        writer.send(serialized).await?;
         Ok(())
     }
 }

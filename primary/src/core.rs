@@ -614,23 +614,55 @@ impl Core {
     }
 
     fn sanitize_vote(&mut self, vote: &Vote) -> DagResult<()> {
-        ensure!(
-            self.current_header.round <= vote.round,
-            DagError::VoteTooOld(vote.digest(), vote.round)
+        debug!(
+            "=== Sanitizing Vote ===\nVote Round: {}\nCurrent Header Round: {}\nVote ID: {}\nCurrent Header ID: {}\nVote Origin: {}\nCurrent Header Author: {}",
+            vote.round,
+            self.current_header.round,
+            vote.id,
+            self.current_header.id,
+            vote.origin,
+            self.current_header.author
         );
-
-        // Ensure we receive a vote on the expected header.
-        ensure!(
-            vote.id == self.current_header.id
-                && vote.origin == self.current_header.author
-                && vote.round == self.current_header.round,
-            DagError::UnexpectedVote(vote.id.clone())
-        );
-
-        // Verify the vote.
-        vote.verify(&self.committee).map_err(DagError::from)
+    
+        // Check if vote is for an old round
+        if self.current_header.round > vote.round {
+            debug!(
+                "Discarding vote: too old\n├─ Vote round: {}\n└─ Current header round: {}",
+                vote.round,
+                self.current_header.round
+            );
+            return Err(DagError::VoteTooOld(vote.digest(), vote.round));
+        }
+    
+        // Check if vote matches expected header
+        if vote.id != self.current_header.id 
+            || vote.origin != self.current_header.author 
+            || vote.round != self.current_header.round {
+            debug!(
+                "Discarding unexpected vote:\n├─ Vote ID: {} (expected: {})\n├─ Vote origin: {} (expected: {})\n└─ Vote round: {} (expected: {})",
+                vote.id,
+                self.current_header.id,
+                vote.origin,
+                self.current_header.author,
+                vote.round,
+                self.current_header.round
+            );
+            return Err(DagError::UnexpectedVote(vote.id.clone()));
+        }
+    
+        // Verify the vote
+        match vote.verify(&self.committee) {
+            Ok(_) => {
+                debug!("Vote verification successful");
+                Ok(())
+            },
+            Err(e) => {
+                debug!("Vote verification failed: {}", e);
+                Err(DagError::from(e))
+            }
+        }
     }
-
+    
     fn sanitize_certificate(&mut self, certificate: &Certificate) -> DagResult<()> {
         // TODO: Disabling this check is a hack. See TODO in certificate_waiter.
 

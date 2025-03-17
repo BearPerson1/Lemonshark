@@ -6,7 +6,7 @@ use crypto::{Digest, PublicKey};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use log::{debug, error};
-use network::SimpleSender;
+use network::ReliableSender;
 use primary::PrimaryWorkerMessage;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,12 +41,10 @@ pub struct Synchronizer {
     /// Input channel to receive the commands from the primary.
     rx_message: Receiver<PrimaryWorkerMessage>,
     /// A network sender to send requests to the other workers.
-    network: SimpleSender,
+    network: ReliableSender,
     /// Loosely keep track of the primary's round number (only used for cleanup).
     round: Round,
-    /// Keeps the digests (of batches) that are waiting to be processed by the primary. Their
-    /// processing will resume when we get the missing batches in the store or we no longer need them.
-    /// It also keeps the round number and a timestamp (`u128`) of each request we sent.
+    /// Keeps the digests (of batches) that are waiting to be processed by the primary.
     pending: HashMap<Digest, (Round, Sender<()>, u128)>,
 }
 
@@ -72,7 +70,7 @@ impl Synchronizer {
                 sync_retry_delay,
                 sync_retry_nodes,
                 rx_message,
-                network: SimpleSender::new(),
+                network: ReliableSender::new(),
                 round: Round::default(),
                 pending: HashMap::new(),
             }
@@ -97,7 +95,6 @@ impl Synchronizer {
         }
     }
 
-    /// Main loop listening to the primary's messages.
     async fn run(&mut self) {
         let mut waiting = FuturesUnordered::new();
 
@@ -106,7 +103,6 @@ impl Synchronizer {
 
         loop {
             tokio::select! {
-                // Handle primary's messages.
                 Some(message) = self.rx_message.recv() => match message {
                     PrimaryWorkerMessage::Synchronize(digests, target) => {
                         let now = SystemTime::now()
@@ -116,12 +112,10 @@ impl Synchronizer {
 
                         let mut missing = Vec::new();
                         for digest in digests {
-                            // Ensure we do not send twice the same sync request.
                             if self.pending.contains_key(&digest) {
                                 continue;
                             }
 
-                            // Check if we received the batch in the meantime.
                             match self.store.read(digest.to_vec()).await {
                                 Ok(None) => {
                                     missing.push(digest.clone());
@@ -136,7 +130,6 @@ impl Synchronizer {
                                 }
                             }
 
-                            // Add the digest to the waiter.
                             let deliver = digest.clone();
                             let (tx_cancel, rx_cancel) = channel(1);
                             let fut = Self::waiter(digest.clone(), self.store.clone(), deliver, rx_cancel);
@@ -144,24 +137,32 @@ impl Synchronizer {
                             self.pending.insert(digest, (self.round, tx_cancel, now));
                         }
 
-                        // Send sync request to a single node. If this fails, we will send it
-                        // to other nodes when a timer times out.
-                        let address = match self.committee.worker(&target, &self.id) {
-                            Ok(address) => address.worker_to_worker,
-                            Err(e) => {
-                                error!("The primary asked us to sync with an unknown node: {}", e);
-                                continue;
-                            }
-                        };
-                        let message = WorkerMessage::BatchRequest(missing, self.name);
-                        let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
-                        self.network.send(address, Bytes::from(serialized)).await;
+                        if !missing.is_empty() {
+                            let address = match self.committee.worker(&target, &self.id) {
+                                Ok(address) => address.worker_to_worker,
+                                Err(e) => {
+                                    error!("The primary asked us to sync with an unknown node: {}", e);
+                                    continue;
+                                }
+                            };
+                            let message = WorkerMessage::BatchRequest(missing, self.name);
+                            let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
+                            
+                            let handler = self.network
+                                .send(address, Bytes::from(serialized))
+                                .await;
+
+                            tokio::spawn(async move {
+                                match handler.await {
+                                    Ok(_) => debug!("Sync request successfully delivered to {}", address),
+                                    Err(_) => debug!("Failed to deliver sync request to {}", address),
+                                }
+                            });
+                        }
                     },
                     PrimaryWorkerMessage::Cleanup(round) => {
-                        // Keep track of the primary's round number.
                         self.round = round;
 
-                        // Cleanup internal state.
                         if self.round < self.gc_depth {
                             continue;
                         }
@@ -176,10 +177,8 @@ impl Synchronizer {
                     }
                 },
 
-                // Stream out the futures of the `FuturesUnordered` that completed.
                 Some(result) = waiting.next() => match result {
                     Ok(Some(digest)) => {
-                        // We got the batch, remove it from the pending list.
                         self.pending.remove(&digest);
                     },
                     Ok(None) => {
@@ -188,11 +187,7 @@ impl Synchronizer {
                     Err(e) => error!("{}", e)
                 },
 
-                // Triggers on timer's expiration.
                 () = &mut timer => {
-                    // We optimistically sent sync requests to a single node. If this timer triggers,
-                    // it means we were wrong to trust it. We are done waiting for a reply and we now
-                    // broadcast the request to a bunch of other nodes (selected at random).
                     let now = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("Failed to measure time")
@@ -212,12 +207,21 @@ impl Synchronizer {
                             .collect();
                         let message = WorkerMessage::BatchRequest(retry, self.name);
                         let serialized = bincode::serialize(&message).expect("Failed to serialize our own message");
-                        self.network
+                        
+                        let handlers = self.network
                             .lucky_broadcast(addresses, Bytes::from(serialized), self.sync_retry_nodes)
                             .await;
+
+                        for handler in handlers {
+                            tokio::spawn(async move {
+                                match handler.await {
+                                    Ok(_) => debug!("Retry sync request successfully delivered"),
+                                    Err(_) => debug!("Failed to deliver retry sync request"),
+                                }
+                            });
+                        }
                     }
 
-                    // Reschedule the timer.
                     timer.as_mut().reset(Instant::now() + Duration::from_millis(TIMER_RESOLUTION));
                 },
             }

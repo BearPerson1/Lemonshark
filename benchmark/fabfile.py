@@ -16,27 +16,27 @@ def local(ctx, debug=True):
         'faults': 0,
         'nodes': 4,
         'workers': 1,
-        'rate': 30_000,
+        'rate': 100_000,
         'tx_size': 512,
-        'duration': 30,
+        'duration': 50,
         'protocol': 'dolphin',
-        'longest_causal_chain':0 # longest chain of causally dependant trans a client will send
+        'longest_causal_chain':10 # longest chain of causally dependant trans a client will send
     }
     node_params = {
         'timeout': 5_000,  # ms
-        'header_size': 50,  # bytes
+        'header_size': 1000,  # bytes
         'max_header_delay': 200,  # ms
         'gc_depth': 50,  # rounds
         'sync_retry_delay': 1000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
-        'cross_shard_failure_rate': 1.0, 
+        'cross_shard_occurance_rate': 1.0, # how often we do cross-shards, this will affect early commit chances
+        'cross_shard_failure_rate': 0.2, 
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
         'cert_timeout': 100, # ms
-        'cross_shard_count':2
+        'cross_shard_count':5
         
     }
     try:
