@@ -180,18 +180,67 @@ impl Core {
         for (round, buffer) in &self.certificate_buffers {
             let has_quorum = buffer.certs.len() >= quorum;
             let has_metadata = buffer.metadata.is_some();
-    
-            // Only process if we have metadata AND quorum of certs
-            if has_metadata && has_quorum {
+
+                // Check if we have our certificate from the previous round
+                let has_our_prev_cert = if *round > 1 {
+                    let our_primary_id = self.committee.get_primary_id(&self.name);
+                    debug!(
+                        "=== Checking Current Buffer for Our Certificate ===\n\
+                        ├─ Current round: {}\n\
+                        └─ Our primary ID: {}",
+                        round,
+                        our_primary_id
+                    );
+                
+                    // Check if current buffer has our certificate
+                    let found = buffer.certs.iter().any(|cert| {
+                        let cert_author_id = self.committee.get_primary_id(&cert.header.author);
+                        let is_our_cert = cert_author_id == our_primary_id;
+                        
+                        debug!(
+                            "Checking certificate:\n\
+                            ├─ Certificate author ID: {}\n\
+                            ├─ Matches our ID ({}): {}\n\
+                            └─ Certificate round: {}",
+                            cert_author_id,
+                            our_primary_id,
+                            is_our_cert,
+                            cert.round()
+                        );
+                        
+                        is_our_cert  // Only check if it's our certificate
+                    });
+                
+                    debug!(
+                        "Certificate check result:\n\
+                        ├─ Round: {}\n\
+                        └─ Found our certificate: {}",
+                        round,
+                        found
+                    );
+                
+                    found
+                } else {
+                    debug!(
+                        "No certificate check needed for round {} (first round)",
+                        round
+                    );
+                    true  // For round 1, we don't need a certificate
+                };
+        
+            // Only process if we have metadata AND quorum of certs AND our previous round cert
+            if has_metadata && has_quorum && has_our_prev_cert {
                 debug!(
                     "Buffer for round {} is ready for processing.\n\
                     ├─ Has metadata: {}\n\
-                    ├─ Has quorum: {} ({}/{} needed)",
+                    ├─ Has quorum: {} ({}/{} needed)\n\
+                    └─ Has our previous round certificate: {}",
                     round,
                     has_metadata,
                     has_quorum,
                     buffer.certs.len(),
-                    quorum
+                    quorum,
+                    has_our_prev_cert
                 );
                 completed_rounds.push(*round);
             } else {
@@ -199,20 +248,27 @@ impl Core {
                     "Buffer for round {} not ready.\n\
                     ├─ Has metadata: {}\n\
                     ├─ Has quorum: {} ({}/{} needed)\n\
+                    ├─ Has our previous round certificate: {}\n\
                     └─ Status: waiting for {}",
                     round,
                     has_metadata,
                     has_quorum,
                     buffer.certs.len(),
                     quorum,
+                    has_our_prev_cert,
                     if !has_metadata {
                         "metadata"
-                    } else {
+                    } else if !has_quorum {
                         "more certificates"
+                    } else {
+                        "our certificate from previous round"
                     }
                 );
+        
             }
         }
+    
+        
     
         // Process completed rounds
         for round in completed_rounds {
