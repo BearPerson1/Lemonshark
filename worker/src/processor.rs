@@ -30,8 +30,7 @@ impl Processor {
         mut rx_batch: Receiver<SerializedBatchMessage>,
         // Output channel to send out batches' digests.
         tx_digest: Sender<SerializedBatchDigestMessage>,
-        // Whether we are processing our own batches or the batches of other nodes.
-        own_digest: bool,
+
     ) {
         tokio::spawn(async move {
             while let Some(batch) = rx_batch.recv().await {
@@ -43,29 +42,17 @@ impl Processor {
 
                 // Hash the batch.
                 let digest = Digest(Sha512::digest(&batch).as_slice()[..32].try_into().unwrap());
-
+                debug!("Processor received digest: {}",digest);
+                debug!("Channel capacity remaining: {}", rx_batch.capacity());
                 // Store the batch.
                 store.write(digest.to_vec(), batch).await;
 
-                // Deliver the batch's digest.
-                let message = match own_digest {
-                    true => {
-                        debug!(
-                            "Worker {} sending OurBatch to primary - Digest: {}, Special txn ID: {:?}",
-                            id, digest, special_txn_id
-                        );
-                        WorkerPrimaryMessage::OurBatch(digest, id, special_txn_id)
-                    }
-                    false => {
-                        // debug!(
-                        //     "Worker {} sending OthersBatch to primary - Digest: {}",
-                        //     id, digest
-                        // );
-                        //WorkerPrimaryMessage::OthersBatch(digest, id)
-                        continue;
-                    }
-                };
-
+                debug!(
+                    "Worker {} sending OurBatch to primary - Digest: {}, Special txn ID: {:?}",
+                    id, digest, special_txn_id
+                );
+        
+                let message = WorkerPrimaryMessage::OurBatch(digest, id, special_txn_id);
                 
                 let message = bincode::serialize(&message)
                     .expect("Failed to serialize our own worker-primary message");

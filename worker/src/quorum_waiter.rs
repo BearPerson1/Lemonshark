@@ -91,13 +91,13 @@ impl QuorumWaiter {
     ) -> Option<BatchVotingStatus> {
         match bincode::deserialize::<crate::worker::WorkerMessage>(batch) {
             Ok(crate::worker::WorkerMessage::Batch(txs, special_txn_id)) => {
-                debug!("\n=== New Batch Added to Buffer ===");
-                debug!("Batch digest: {}", digest);
-                debug!("Total transactions: {}", txs.len());
-                debug!("Batch size: {} bytes", batch.len());
-                debug!("Special transaction ID: {:?}", special_txn_id);
-                debug!("Expected quorum threshold: {}", self.committee.quorum_threshold());
-                debug!("Starting stake (self): {}", self.stake);
+                // debug!("\n=== New Batch Added to Buffer ===");
+                // debug!("Batch digest: {}", digest);
+                // debug!("Total transactions: {}", txs.len());
+                // debug!("Batch size: {} bytes", batch.len());
+                // debug!("Special transaction ID: {:?}", special_txn_id);
+                // debug!("Expected quorum threshold: {}", self.committee.quorum_threshold());
+                // debug!("Starting stake (self): {}", self.stake);
 
                 let wait_for_quorum: FuturesUnordered<StakeFuture> = handlers
                     .into_iter()
@@ -135,23 +135,24 @@ impl QuorumWaiter {
         while let Some(stake) = status.wait_for_quorum.next().await {
             status.metadata.total_stake += stake;
             status.metadata.votes_received += 1;
-            debug!("\nReceived vote {} for batch {}", status.metadata.votes_received, status.metadata.digest);
-            debug!("Vote stake value: {}", stake);
-            debug!("Current total stake: {}/{}", status.metadata.total_stake, committee.quorum_threshold());
+            // debug!("\nReceived vote {} for batch {}", status.metadata.votes_received, status.metadata.digest);
+            // debug!("Vote stake value: {}", stake);
+            // debug!("Current total stake: {}/{}", status.metadata.total_stake, committee.quorum_threshold());
 
             if status.metadata.total_stake >= committee.quorum_threshold() {
-                debug!("\n=== Quorum Reached for Batch {} ===", status.metadata.digest);
-                debug!("Final total stake: {}", status.metadata.total_stake);
-                debug!("Total votes received: {}", status.metadata.votes_received);
+                // debug!("\n=== Quorum Reached for Batch {} ===", status.metadata.digest);
+                // debug!("Final total stake: {}", status.metadata.total_stake);
+                // debug!("Total votes received: {}", status.metadata.votes_received);
                 
                 if let Some(txn_id) = status.metadata.special_txn_id {
-                    debug!("Forwarding batch with special_txn_id: {:?}", txn_id);
+                    // debug!("Forwarding batch with special_txn_id: {:?}", txn_id);
                 }
 
                 if let Err(e) = tx_batch.send(status.metadata.batch.clone()).await {
-                    warn!("Failed to deliver batch {}: {}", status.metadata.digest, e);
+                    // warn!("Failed to deliver batch {}: {}", status.metadata.digest, e);
                 } else {
                     debug!("Successfully forwarded batch {}", status.metadata.digest);
+                    debug!("Channel capacity remaining: {}", tx_batch.capacity());
                     return true; // Batch completed
                 }
                 break;
