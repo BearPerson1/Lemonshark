@@ -132,6 +132,7 @@ impl QuorumWaiter {
         committee: &Committee,
         tx_batch: &Sender<SerializedBatchMessage>,
     ) -> bool {
+
         while let Some(stake) = status.wait_for_quorum.next().await {
             status.metadata.total_stake += stake;
             status.metadata.votes_received += 1;
@@ -158,6 +159,7 @@ impl QuorumWaiter {
                 break;
             }
         }
+
         false // Batch still needs more votes
     }
 

@@ -277,11 +277,8 @@ impl MessageHandler for WorkerReceiverHandler {
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized) {
             Ok(WorkerMessage::Batch(batch, special_txn_id)) => {
-         
-                let serialized_batch = bincode::serialize(&batch)
-                .expect("Failed to serialize batch");
                 
-                let digest = Digest(Sha512::digest(&serialized_batch).as_slice()[..32].try_into().unwrap());
+                let digest = Digest(Sha512::digest(&serialized).as_slice()[..32].try_into().unwrap());
                 debug!("Worker received batch with digest: {}", digest);
                 }
             Ok(WorkerMessage::BatchRequest(missing, requestor)) => self
