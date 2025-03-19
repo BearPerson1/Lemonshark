@@ -203,7 +203,7 @@ class LogParser:
 
     def _end_to_end_latency(self):
         latency = []
-        # Create a list to store all transaction details
+        # Create a list to store all transaction details with timestamps
         transaction_details = []
         
         for sent, received in zip(self.sent_samples, self.received_samples):
@@ -215,25 +215,28 @@ class LogParser:
                     latency_value = end - start
                     latency.append(latency_value)
 
-                    # Store transaction details
+                    # Store transaction details with timestamp
                     transaction_details.append({
                         'tx_number': tx_id,
                         'batch_id': batch_id,
+                        'start_time': start,
                         'latency': latency_value
                     })
 
-        # Sort transaction details by transaction number
-        transaction_details.sort(key=lambda x: x['tx_number'])
+        # Sort transaction details by start time
+        transaction_details.sort(key=lambda x: x['start_time'])
 
-        # Write to file
+        # Write to file with timestamps
         with open('transaction_details.txt', 'w') as f:
             # Write header
-            f.write(f"{'Txn Number':<12} | {'Batch ID':<40} | {'Latency (s)':<10}\n")
-            f.write("-" * 65 + "\n")
+            f.write(f"{'Txn Number':<12} | {'Batch ID':<40} | {'Start Time (s)':<15} | {'Latency (s)':<10}\n")
+            f.write("-" * 82 + "\n")
             
             # Write data
+            first_timestamp = transaction_details[0]['start_time'] if transaction_details else 0
             for detail in transaction_details:
-                f.write(f"{detail['tx_number']:<12} | {detail['batch_id']:<40} | {detail['latency']:.4f}\n")
+                relative_time = detail['start_time'] - first_timestamp
+                f.write(f"{detail['tx_number']:<12} | {detail['batch_id']:<40} | {relative_time:15.3f} | {detail['latency']:.4f}\n")
 
         if latency:
             latency_array = np.array(latency)
@@ -246,9 +249,34 @@ class LogParser:
             plt.grid(True)
             plt.savefig('end_to_end_latency_distribution.png')
             plt.close()
-            
-            self.plot_transaction_latencies(latency)
 
+            # Create time-based latency plot
+            if transaction_details:
+                plt.figure(figsize=(12, 6))
+                
+                # Extract timestamps and normalize them to start from 0
+                start_times = [d['start_time'] for d in transaction_details]
+                latencies = [d['latency'] for d in transaction_details]
+                
+                # Normalize timestamps to start from 0
+                start_time = start_times[0]
+                normalized_times = [t - start_time for t in start_times]
+                
+                plt.plot(normalized_times, latencies, '-o', markersize=3, alpha=0.6)
+                plt.title('End-to-End Latency Over Time')
+                plt.xlabel('Time (seconds)')
+                plt.ylabel('Latency (seconds)')
+                plt.grid(True, alpha=0.3)
+                
+                avg_latency = np.mean(latencies)
+                plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
+                        label=f'Average Latency: {avg_latency:.2f}s')
+                
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig('transaction_latencies.png')
+                plt.close()
+            
         return mean(latency) if latency else 0
 
     ## lemonshark
@@ -334,48 +362,86 @@ class LogParser:
     
     def plot_transaction_latencies(self, latencies):
         """
-        Create a line plot of transaction latencies.
+        Create a line plot of transaction latencies using actual timestamps.
         """
-        transaction_numbers = range(1, len(latencies) + 1)
+        # Get transaction timestamps
+        timestamps = []
+        ordered_latencies = []
         
-        plt.figure(figsize=(12, 6))
-        plt.plot(transaction_numbers, latencies, '-o', markersize=3, alpha=0.6)
-        plt.title('Transaction Latency Over Time')
-        plt.xlabel('Transaction Number')
-        plt.ylabel('Latency (seconds)')
-        plt.grid(True, alpha=0.3)
+        for sent, received in zip(self.sent_samples, self.received_samples):
+            for tx_id, batch_id in received.items():
+                if batch_id in self.commits and tx_id in sent:
+                    timestamps.append(sent[tx_id])  # Use the transaction's send time as timestamp
+                    start = sent[tx_id]
+                    end = self.commits[batch_id]
+                    ordered_latencies.append(end - start)
         
-        avg_latency = np.mean(latencies)
-        plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
-                   label=f'Average Latency: {avg_latency:.2f}s')
-        
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('transaction_latencies.png')
-        plt.close()
+        # Sort by timestamp
+        if timestamps and ordered_latencies:
+            # Create sorted pairs of timestamps and latencies
+            sorted_pairs = sorted(zip(timestamps, ordered_latencies))
+            timestamps, ordered_latencies = zip(*sorted_pairs)
+            
+            # Normalize timestamps to start from 0
+            start_time = timestamps[0]
+            normalized_timestamps = [t - start_time for t in timestamps]
+            
+            plt.figure(figsize=(12, 6))
+            plt.plot(normalized_timestamps, ordered_latencies, '-o', markersize=3, alpha=0.6)
+            plt.title('Transaction Latency Over Time')
+            plt.xlabel('Time (seconds)')
+            plt.ylabel('Latency (seconds)')
+            plt.grid(True, alpha=0.3)
+            
+            avg_latency = np.mean(ordered_latencies)
+            plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
+                    label=f'Average Latency: {avg_latency:.2f}s')
+            
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig('transaction_latencies.png')
+            plt.close()
 
 
     def plot_cons_latencies(self, latencies):
         """
-        Create a line plot of transaction latencies.
+        Create a line plot of consensus latencies using actual timestamps.
         """
-        transaction_numbers = range(1, len(latencies) + 1)
+        # Get proposal timestamps and corresponding latencies
+        timestamps = []
+        ordered_latencies = []
         
-        plt.figure(figsize=(12, 6))
-        plt.plot(transaction_numbers, latencies, '-o', markersize=3, alpha=0.6)
-        plt.title('Transaction Latency Over Time')
-        plt.xlabel('Transaction Number')
-        plt.ylabel('Latency (seconds)')
-        plt.grid(True, alpha=0.3)
+        for digest, commit_time in self.commits.items():
+            if digest in self.proposals:
+                proposal_time = self.proposals[digest]
+                timestamps.append(proposal_time)  # Use proposal time as timestamp
+                ordered_latencies.append(commit_time - proposal_time)
         
-        avg_latency = np.mean(latencies)
-        plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
-                   label=f'Average Latency: {avg_latency:.2f}s')
-        
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig('cons_latencies.png')
-        plt.close()
+        # Sort by timestamp
+        if timestamps and ordered_latencies:
+            # Create sorted pairs of timestamps and latencies
+            sorted_pairs = sorted(zip(timestamps, ordered_latencies))
+            timestamps, ordered_latencies = zip(*sorted_pairs)
+            
+            # Normalize timestamps to start from 0
+            start_time = timestamps[0]
+            normalized_timestamps = [t - start_time for t in timestamps]
+            
+            plt.figure(figsize=(12, 6))
+            plt.plot(normalized_timestamps, ordered_latencies, '-o', markersize=3, alpha=0.6)
+            plt.title('Consensus Latency Over Time')
+            plt.xlabel('Time (seconds)')
+            plt.ylabel('Latency (seconds)')
+            plt.grid(True, alpha=0.3)
+            
+            avg_latency = np.mean(ordered_latencies)
+            plt.axhline(y=avg_latency, color='r', linestyle='--', alpha=0.5,
+                    label=f'Average Latency: {avg_latency:.2f}s')
+            
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig('cons_latencies.png')
+            plt.close()
 
     def result(self):
         header_size = self.configs[0]['header_size']

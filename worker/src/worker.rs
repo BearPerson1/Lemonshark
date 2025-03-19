@@ -188,6 +188,7 @@ impl Worker {
             self.store.clone(),
             /* rx_batch */ rx_processor,
             /* tx_digest */ tx_primary,
+            true,
         );
 
         info!(
@@ -199,7 +200,7 @@ impl Worker {
     /// Spawn all tasks responsible to handle messages from other workers.
     fn handle_workers_messages(&self, tx_primary: Sender<SerializedBatchDigestMessage>) {
         let (tx_helper, rx_helper) = channel(CHANNEL_CAPACITY);
-
+        let (tx_processor, rx_processor) = channel(CHANNEL_CAPACITY);
 
         // Receive incoming messages from other workers.
         let mut address = self
@@ -213,6 +214,7 @@ impl Worker {
             /* handler */
             WorkerReceiverHandler {
                 tx_helper,
+                tx_processor,
             },
         );
 
@@ -226,13 +228,13 @@ impl Worker {
 
         // This `Processor` hashes and stores the batches we receive from the other workers. It then forwards the
         // batch's digest to the `PrimaryConnector` that will send it to our primary.
-        // Processor::spawn(
-        //     self.id,
-        //     self.store.clone(),
-        //     /* rx_batch */ rx_processor,
-        //     /* tx_digest */ tx_primary,
-        //     /* own_batch */ false,
-        // );
+        Processor::spawn(
+            self.id,
+            self.store.clone(),
+            /* rx_batch */ rx_processor,
+            /* tx_digest */ tx_primary,
+            /* own_batch */ false,
+        );
 
         info!(
             "Worker {} listening to worker messages on {}",
@@ -266,6 +268,7 @@ impl MessageHandler for TxReceiverHandler {
 #[derive(Clone)]
 struct WorkerReceiverHandler {
     tx_helper: Sender<(Vec<Digest>, PublicKey)>,
+    tx_processor: Sender<SerializedBatchMessage>,
 }
 
 #[async_trait]
@@ -276,11 +279,11 @@ impl MessageHandler for WorkerReceiverHandler {
 
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized) {
-            Ok(WorkerMessage::Batch(batch, special_txn_id)) => {
-                
-                let digest = Digest(Sha512::digest(&serialized).as_slice()[..32].try_into().unwrap());
-                debug!("Worker received batch with digest: {}", digest);
-                }
+            Ok(WorkerMessage::Batch(batch, special_txn_id)) => self
+            .tx_processor
+            .send(serialized.to_vec())
+            .await
+            .expect("Failed to send batch"),
             Ok(WorkerMessage::BatchRequest(missing, requestor)) => self
                 .tx_helper
                 .send((missing, requestor))

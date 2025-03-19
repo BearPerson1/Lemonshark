@@ -472,7 +472,7 @@ impl Client {
     
             for x in 0..burst {
                 if x == counter % burst {
-                    info!("Sending sample transaction {}", counter);
+                    
                     tx.put_u8(0u8); // Sample txs start with 0.
                     tx.put_u64(counter); // This counter identifies the tx.
                 } else {
@@ -486,6 +486,9 @@ impl Client {
                 if let Err(e) = transport_regular.send(bytes).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
+                }
+                if x == counter % burst {
+                    info!("Sending sample transaction {}", counter);
                 }
             }
     

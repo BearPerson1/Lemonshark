@@ -33,8 +33,9 @@ impl PrimaryConnector {
         while let Some(digest) = self.rx_digest.recv().await {
             // Send the digest through the network and wait for confirmation
             let bytes = Bytes::from(digest);
-            debug!("Sending batch digest to primary at {}", self.primary_address);
             
+            debug!("Sending batch digest to primary at {}", self.primary_address);
+            debug!("Channel Capacity: {}",self.rx_digest.capacity());
             // Use the reliable sender and get the cancel handler
             let handler = self.network
                 .send(self.primary_address, bytes)
