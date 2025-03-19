@@ -32,9 +32,9 @@ impl PrimaryConnector {
     async fn run(&mut self) {
         while let Some(digest) = self.rx_digest.recv().await {
             // Send the digest through the network and wait for confirmation
-            let bytes = Bytes::from(digest);
+            let bytes = Bytes::from(digest.clone());
             
-            debug!("Sending batch digest to primary at {}", self.primary_address);
+            debug!("Sending batch digest {:?} to primary at {}", digest, self.primary_address);
             debug!("Channel Capacity: {}",self.rx_digest.capacity());
             // Use the reliable sender and get the cancel handler
             let handler = self.network
@@ -43,7 +43,7 @@ impl PrimaryConnector {
 
             // Wait for the message to be delivered or cancelled
             if let Ok(_) = handler.await {
-                debug!("Batch digest successfully delivered to primary at {}", self.primary_address);
+                debug!("Batch digest {:?} successfully delivered to primary at {}", digest, self.primary_address);
             } else {
                 debug!("Failed to deliver batch digest to primary at {}", self.primary_address);
             }

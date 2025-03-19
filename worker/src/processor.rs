@@ -35,7 +35,7 @@ impl Processor {
         tokio::spawn(async move {
             while let Some(batch) = rx_batch.recv().await {
                 let mut store = store.clone();
-                debug!("Receive Channel Capacity: {}", rx_batch.capacity());
+               
                 
                 // Extract special transaction ID from the batch
                 let special_txn_id = match bincode::deserialize(&batch) {
@@ -58,6 +58,7 @@ impl Processor {
 
                 // Only send to primary if own_digest is true
                 if own_digest {
+                    debug!("Receive Channel Capacity: {}", rx_batch.capacity());
                     debug!(
                         "Worker {} sending OurBatch to primary - Digest: {}, Special txn ID: {:?}",
                         id, digest, special_txn_id
