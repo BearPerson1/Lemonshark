@@ -9,7 +9,7 @@ use crypto::{Digest, PublicKey};
 use std::collections::HashMap;
 use store::Store;
 use tokio::sync::mpsc::Sender;
-
+use log::{debug};
 /// The `Synchronizer` checks if we have all batches and parents referenced by a header. If we don't, it sends
 /// a command to the `Waiter` to request the missing data.
 pub struct Synchronizer {
@@ -55,6 +55,7 @@ impl Synchronizer {
         }
 
         let mut missing = HashMap::new();
+        debug!("Checking payload for header from author={:?}", header.author);
         for (digest, worker_id) in header.payload.iter() {
             // Check whether we have the batch. If one of our worker has the batch, the primary stores the pair
             // (digest, worker_id) in its own storage. It is important to verify that we received the batch
@@ -69,6 +70,7 @@ impl Synchronizer {
             //         X as they will be querying worker #1.
             let key = [digest.as_ref(), &worker_id.to_le_bytes()].concat();
             if self.store.read(key).await?.is_none() {
+                debug!("Missing batch [digest={:?}, worker_id={}]", digest, worker_id);
                 missing.insert(digest.clone(), *worker_id);
             }
         }

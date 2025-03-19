@@ -6,7 +6,11 @@ use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use network::CancelHandler;
 use tokio::sync::mpsc::{Receiver, Sender};
-use log::{info,debug};
+use log::{info, debug, warn};
+use ed25519_dalek::Sha512;
+use ed25519_dalek::Digest as _;
+use std::convert::TryInto;
+
 
 #[cfg(test)]
 #[path = "tests/quorum_waiter_tests.rs"]
@@ -58,17 +62,41 @@ impl QuorumWaiter {
         deliver
     }
 
+
     /// Main loop.
     async fn run(&mut self) {
+
+        
         while let Some(QuorumWaiterMessage { batch, handlers }) = self.rx_message.recv().await {
-            // Add debug logging to track the message
+            // Calculate batch digest
+            let digest = {
+                let hash = Sha512::digest(&batch);
+                let digest_bytes: [u8; 32] = hash.as_slice()[..32].try_into()
+                    .expect("Failed to create digest");
+                format!("{:?}", crypto::Digest(digest_bytes))
+            };
+
+            // Process incoming batch
             if let Ok(worker_message) = bincode::deserialize::<crate::worker::WorkerMessage>(&batch) {
-                // match worker_message {
-                //     crate::worker::WorkerMessage::Batch(_, special_txn_id) => {
-                //         debug!("[QuorumWaiter] Processing batch with special_txn_id: {:?}", special_txn_id);
-                //     },
-                //     _ => debug!("[QuorumWaiter] Processing non-batch message"),
-                // }
+                match worker_message {
+                    crate::worker::WorkerMessage::Batch(txs, special_txn_id) => {
+                        debug!("\n=== QuorumWaiter Processing New Batch ===");
+                        debug!("Batch digest: {}", digest);
+                        debug!("Total transactions: {}", txs.len());
+                        debug!("Batch size: {} bytes", batch.len());
+                        debug!("Special transaction ID: {:?}", special_txn_id);
+                        debug!("Expected quorum threshold: {}", self.committee.quorum_threshold());
+                        debug!("Starting stake (self): {}", self.stake);
+                        debug!("Handlers awaiting votes: {}", handlers.len());
+                    },
+                    _ => {
+                        debug!("[QuorumWaiter] Received non-batch message");
+                        continue;
+                    }
+                }
+            } else {
+                warn!("[QuorumWaiter] Failed to deserialize batch message");
+                continue;
             }
 
             let mut wait_for_quorum: FuturesUnordered<_> = handlers
@@ -79,21 +107,57 @@ impl QuorumWaiter {
                 })
                 .collect();
 
-            // Wait for the first 2f nodes to send back an Ack...
+            // Track votes and stakes
             let mut total_stake = self.stake;
+            let mut votes_received = 0;
+            
+            debug!("\n=== Starting Vote Collection for Batch {} ===", digest);
+
+            debug!("Initial stake: {}", total_stake);
+
             while let Some(stake) = wait_for_quorum.next().await {
                 total_stake += stake;
+                votes_received += 1;
+                
+                debug!("\nReceived vote {} for batch {}", votes_received, digest);
+
+                debug!("Vote stake value: {}", stake);
+                debug!("Current total stake: {}/{}", total_stake, self.committee.quorum_threshold());
+
                 if total_stake >= self.committee.quorum_threshold() {
-                    debug!("[QuorumWaiter] Quorum reached, forwarding batch");
-                    self.tx_batch
-                        .send(batch)
-                        .await
-                        .expect("Failed to deliver batch");
-                    debug!("[QuorumWaiter] Batch forwarded");
+                    debug!("\n=== Quorum Reached for Batch {} ===", digest);
+
+                    debug!("Final total stake: {}", total_stake);
+                    debug!("Total votes received: {}", votes_received);
+
+                    // Log special transaction details if present
+                    if let Ok(worker_message) = bincode::deserialize::<crate::worker::WorkerMessage>(&batch) {
+                        if let crate::worker::WorkerMessage::Batch(_, special_txn_id) = worker_message {
+                            if special_txn_id.is_some() {
+                                debug!("Forwarding batch with special_txn_id: {:?}", special_txn_id);
+                            }
+                        }
+                    }
+
+                    match self.tx_batch.send(batch).await {
+                        Ok(_) => {
+                            debug!("Successfully forwarded batch {}", digest);
+
+                        },
+                        Err(e) => {
+                            warn!("Failed to deliver batch {}: {}", digest, e);
+                        }
+                    }
                     break;
                 }
             }
+            
+            debug!("\n=== End of Batch {} Processing ===\n", digest);
         }
     }
-    
+}
+
+#[cfg(test)]
+mod tests {
+    // Add your tests here
 }

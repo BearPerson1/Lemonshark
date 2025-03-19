@@ -2,7 +2,7 @@
 use bytes::Bytes;
 use config::{Committee, WorkerId};
 use crypto::{Digest, PublicKey};
-use log::{error, warn};
+use log::{error, warn,debug};
 use network::ReliableSender;
 use store::Store;
 use tokio::sync::mpsc::Receiver;
@@ -48,7 +48,7 @@ impl Helper {
     async fn run(&mut self) {
         while let Some((digests, origin)) = self.rx_request.recv().await {
             // TODO [issue #7]: Do some accounting to prevent bad nodes from monopolizing our resources.
-
+            debug!("Received batch request from {}", origin);
             // get the requestors address.
             let address = match self.committee.worker(&origin, &self.id) {
                 Ok(x) => x.worker_to_worker,

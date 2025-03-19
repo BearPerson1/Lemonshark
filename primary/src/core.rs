@@ -147,7 +147,7 @@ impl Core {
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
                 cert_timeout,
                 certificate_buffers: HashMap::with_capacity(2 * gc_depth as usize),
-                buffer_check_interval: Duration::from_millis(50), // Check every 25ms
+                buffer_check_interval: Duration::from_millis(100), // Check every 25ms
                 last_buffer_check: Instant::now(),
                 rx_metadata,
                 completed_round: 0,
@@ -469,24 +469,25 @@ impl Core {
 
         // Check weak links. If they are too old, we don't try to synchronize them but we still need to
         // get the payload.
-        if !self
-            .synchronizer
-            .get_weak_links(&header, &self.gc_round)
-            .await?
-        {
-            debug!(
-                "Processing of {} suspended: missing weak-link(s)",
-                header.id
-            );
-            return Ok(());
-        }
+        // if !self
+        //     .synchronizer
+        //     .get_weak_links(&header, &self.gc_round)
+        //     .await?
+        // {
+        //     debug!(
+        //         "Processing of {} suspended: missing weak-link(s)",
+        //         header.id
+        //     );
+        //     return Ok(());
+        // }
 
         // Ensure we have the payload. If we don't, the synchronizer will ask our workers to get it, and then
         // reschedule processing of this header once we have it.
-        if self.synchronizer.missing_payload(header).await? {
-            debug!("Processing of {} suspended: missing payload", header);
-            return Ok(());
-        }
+        //// note: quorum_waiter should have handled this already. 
+        // if self.synchronizer.missing_payload(header).await? {
+        //     debug!("Processing of {} suspended: missing payload", header);
+        //     return Ok(());
+        // }
 
         // debug!(
         //     "=== Vote Creation Check ===\nHeader Round: {}\nHeader Author: {}\nHeader ID: {}\nOur Name: {}",

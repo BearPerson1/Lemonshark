@@ -69,9 +69,11 @@ impl<Handler: MessageHandler> Receiver<Handler> {
         tokio::spawn(async move {
             let transport = Framed::new(socket, LengthDelimitedCodec::new());
             let (mut writer, mut reader) = transport.split();
+
             while let Some(frame) = reader.next().await {
                 match frame.map_err(|e| NetworkError::FailedToReceiveMessage(peer, e)) {
                     Ok(message) => {
+                        //debug!("message received from [{}]", peer);
                         if let Err(e) = handler.dispatch(&mut writer, message.freeze()).await {
                             warn!("{}", e);
                             return;
