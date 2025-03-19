@@ -3,14 +3,17 @@ use crate::processor::SerializedBatchMessage;
 use config::{Committee, Stake};
 use crypto::PublicKey;
 use futures::stream::futures_unordered::FuturesUnordered;
-use futures::stream::StreamExt as _;
+use futures::Future;
 use network::CancelHandler;
 use tokio::sync::mpsc::{Receiver, Sender};
-use log::{info, debug, warn};
+use log::{debug, warn};
 use ed25519_dalek::Sha512;
 use ed25519_dalek::Digest as _;
 use std::convert::TryInto;
-
+use std::collections::HashMap;
+use std::pin::Pin;
+use tokio::time::{interval, Duration};
+use futures::StreamExt;
 
 #[cfg(test)]
 #[path = "tests/quorum_waiter_tests.rs"]
@@ -22,6 +25,20 @@ pub struct QuorumWaiterMessage {
     pub batch: SerializedBatchMessage,
     /// The cancel handlers to receive the acknowledgements of our broadcast.
     pub handlers: Vec<(PublicKey, CancelHandler)>,
+}
+
+// Define the future type explicitly
+type StakeFuture = Pin<Box<dyn Future<Output = Stake> + Send>>;
+
+/// Tracks the voting status of a single batch
+#[derive(Debug)]
+struct BatchVotingStatus {
+    batch: SerializedBatchMessage,
+    total_stake: Stake,
+    votes_received: u64,
+    digest: String,
+    special_txn_id: Option<u64>,
+    wait_for_quorum: FuturesUnordered<StakeFuture>,
 }
 
 /// The QuorumWaiter waits for 2f authorities to acknowledge reception of a batch.
@@ -62,102 +79,134 @@ impl QuorumWaiter {
         deliver
     }
 
+    /// Calculate batch digest
+    fn calculate_digest(batch: &[u8]) -> String {
+        let hash = Sha512::digest(batch);
+        let digest_bytes: [u8; 32] = hash.as_slice()[..32].try_into()
+            .expect("Failed to create digest");
+        format!("{:?}", crypto::Digest(digest_bytes))
+    }
+
+    /// Process a new batch and return its voting status
+    fn process_new_batch(
+        &self,
+        batch: &SerializedBatchMessage,
+        digest: &str,
+        handlers: Vec<(PublicKey, CancelHandler)>,
+    ) -> Option<BatchVotingStatus> {
+        match bincode::deserialize::<crate::worker::WorkerMessage>(batch) {
+            Ok(crate::worker::WorkerMessage::Batch(txs, special_txn_id)) => {
+                debug!("\n=== New Batch Added to Buffer ===");
+                debug!("Batch digest: {}", digest);
+                debug!("Total transactions: {}", txs.len());
+                debug!("Batch size: {} bytes", batch.len());
+                debug!("Special transaction ID: {:?}", special_txn_id);
+                debug!("Expected quorum threshold: {}", self.committee.quorum_threshold());
+                debug!("Starting stake (self): {}", self.stake);
+
+                let wait_for_quorum: FuturesUnordered<StakeFuture> = handlers
+                    .into_iter()
+                    .map(|(name, handler)| {
+                        let stake = self.committee.stake(&name);
+                        Box::pin(Self::waiter(handler, stake)) as StakeFuture
+                    })
+                    .collect();
+
+                Some(BatchVotingStatus {
+                    batch: batch.clone(),
+                    total_stake: self.stake, // Start with own stake
+                    votes_received: 0,
+                    digest: digest.to_string(),
+                    special_txn_id,
+                    wait_for_quorum,
+                })
+            },
+            _ => {
+                warn!("Invalid batch message received");
+                None
+            }
+        }
+    }
 
     /// Main loop.
     async fn run(&mut self) {
-
+        // Create a buffer to store batches and their voting status
+        let mut batch_buffer: HashMap<Vec<u8>, BatchVotingStatus> = HashMap::new();
         
-        while let Some(QuorumWaiterMessage { batch, handlers }) = self.rx_message.recv().await {
-            // Calculate batch digest
-            let digest = {
-                let hash = Sha512::digest(&batch);
-                let digest_bytes: [u8; 32] = hash.as_slice()[..32].try_into()
-                    .expect("Failed to create digest");
-                format!("{:?}", crypto::Digest(digest_bytes))
-            };
+        // Create an interval timer for periodic checks (every 100ms)
+        let mut check_interval = interval(Duration::from_millis(100));
+        
+        loop {
+            tokio::select! {
+                // Branch 1: Receive new messages
+                maybe_message = self.rx_message.recv() => {
+                    let QuorumWaiterMessage { batch, handlers } = match maybe_message {
+                        Some(msg) => msg,
+                        None => break, // Channel closed
+                    };
 
-            // Process incoming batch
-            if let Ok(worker_message) = bincode::deserialize::<crate::worker::WorkerMessage>(&batch) {
-                match worker_message {
-                    crate::worker::WorkerMessage::Batch(txs, special_txn_id) => {
-                        debug!("\n=== QuorumWaiter Processing New Batch ===");
-                        debug!("Batch digest: {}", digest);
-                        debug!("Total transactions: {}", txs.len());
-                        debug!("Batch size: {} bytes", batch.len());
-                        debug!("Special transaction ID: {:?}", special_txn_id);
-                        debug!("Expected quorum threshold: {}", self.committee.quorum_threshold());
-                        debug!("Starting stake (self): {}", self.stake);
-                        debug!("Handlers awaiting votes: {}", handlers.len());
-                    },
-                    _ => {
-                        debug!("[QuorumWaiter] Received non-batch message");
-                        continue;
+                    let digest = Self::calculate_digest(&batch);
+                    
+                    // Process and store new batch
+                    if let Some(status) = self.process_new_batch(&batch, &digest, handlers) {
+                        batch_buffer.insert(batch.clone(), status);
                     }
                 }
-            } else {
-                warn!("[QuorumWaiter] Failed to deserialize batch message");
-                continue;
-            }
 
-            let mut wait_for_quorum: FuturesUnordered<_> = handlers
-                .into_iter()
-                .map(|(name, handler)| {
-                    let stake = self.committee.stake(&name);
-                    Self::waiter(handler, stake)
-                })
-                .collect();
+                // Branch 2: Process the timer tick to check quorum
+                _ = check_interval.tick() => {
+                    let mut completed_batches = Vec::new();
 
-            // Track votes and stakes
-            let mut total_stake = self.stake;
-            let mut votes_received = 0;
-            
-            debug!("\n=== Starting Vote Collection for Batch {} ===", digest);
+                    // Check each batch in the buffer
+                    for (batch_key, status) in batch_buffer.iter_mut() {
+                        // Process any new votes that have arrived
+                        while let Some(stake) = status.wait_for_quorum.next().await {
+                            status.total_stake += stake;
+                            status.votes_received += 1;
+                            debug!("\nReceived vote {} for batch {}", status.votes_received, status.digest);
+                            debug!("Vote stake value: {}", stake);
+                            debug!("Current total stake: {}/{}", status.total_stake, self.committee.quorum_threshold());
 
-            debug!("Initial stake: {}", total_stake);
+                            // Check if we've reached quorum immediately after receiving a vote
+                            if status.total_stake >= self.committee.quorum_threshold() {
+                                debug!("\n=== Quorum Reached for Batch {} ===", status.digest);
+                                debug!("Final total stake: {}", status.total_stake);
+                                debug!("Total votes received: {}", status.votes_received);
+                                
+                                if let Some(txn_id) = status.special_txn_id {
+                                    debug!("Forwarding batch with special_txn_id: {:?}", txn_id);
+                                }
 
-            while let Some(stake) = wait_for_quorum.next().await {
-                total_stake += stake;
-                votes_received += 1;
-                
-                debug!("\nReceived vote {} for batch {}", votes_received, digest);
-
-                debug!("Vote stake value: {}", stake);
-                debug!("Current total stake: {}/{}", total_stake, self.committee.quorum_threshold());
-
-                if total_stake >= self.committee.quorum_threshold() {
-                    debug!("\n=== Quorum Reached for Batch {} ===", digest);
-
-                    debug!("Final total stake: {}", total_stake);
-                    debug!("Total votes received: {}", votes_received);
-
-                    // Log special transaction details if present
-                    if let Ok(worker_message) = bincode::deserialize::<crate::worker::WorkerMessage>(&batch) {
-                        if let crate::worker::WorkerMessage::Batch(_, special_txn_id) = worker_message {
-                            if special_txn_id.is_some() {
-                                debug!("Forwarding batch with special_txn_id: {:?}", special_txn_id);
+                                // Send the batch that reached quorum
+                                if let Err(e) = self.tx_batch.send(status.batch.clone()).await {
+                                    warn!("Failed to deliver batch {}: {}", status.digest, e);
+                                } else {
+                                    debug!("Successfully forwarded batch {}", status.digest);
+                                    completed_batches.push(batch_key.clone());
+                                }
+                                break;  // Exit the vote processing loop once quorum is reached
                             }
                         }
                     }
 
-                    match self.tx_batch.send(batch).await {
-                        Ok(_) => {
-                            debug!("Successfully forwarded batch {}", digest);
-
-                        },
-                        Err(e) => {
-                            warn!("Failed to deliver batch {}: {}", digest, e);
-                        }
+                    // Remove completed batches from buffer
+                    for batch_key in completed_batches {
+                        batch_buffer.remove(&batch_key);
                     }
-                    break;
                 }
             }
-            
-            debug!("\n=== End of Batch {} Processing ===\n", digest);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    // Add your tests here
+    use super::*;
+    use tokio::sync::mpsc::channel;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_quorum_waiter_basic() {
+        // Test implementation here
+    }
 }

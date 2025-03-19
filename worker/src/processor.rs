@@ -8,6 +8,7 @@ use primary::WorkerPrimaryMessage;
 use std::convert::TryInto;
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
+use log::debug;
 
 #[cfg(test)]
 #[path = "tests/processor_tests.rs"]
@@ -48,9 +49,23 @@ impl Processor {
 
                 // Deliver the batch's digest.
                 let message = match own_digest {
-                    true => WorkerPrimaryMessage::OurBatch(digest, id, special_txn_id),  // Use the extracted special_txn_id
-                    false => WorkerPrimaryMessage::OthersBatch(digest, id),
+                    true => {
+                        debug!(
+                            "Worker {} sending OurBatch to primary - Digest: {}, Special txn ID: {:?}",
+                            id, digest, special_txn_id
+                        );
+                        WorkerPrimaryMessage::OurBatch(digest, id, special_txn_id)
+                    }
+                    false => {
+                        debug!(
+                            "Worker {} sending OthersBatch to primary - Digest: {}",
+                            id, digest
+                        );
+                        WorkerPrimaryMessage::OthersBatch(digest, id)
+                    }
                 };
+
+                
                 let message = bincode::serialize(&message)
                     .expect("Failed to serialize our own worker-primary message");
                 tx_digest
