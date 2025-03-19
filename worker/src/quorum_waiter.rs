@@ -1,4 +1,3 @@
-// Copyright(C) Facebook, Inc. and its affiliates.
 use crate::processor::SerializedBatchMessage;
 use config::{Committee, Stake};
 use crypto::PublicKey;
@@ -14,6 +13,8 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use tokio::time::{interval, Duration};
 use futures::StreamExt;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[cfg(test)]
 #[path = "tests/quorum_waiter_tests.rs"]
@@ -21,40 +22,37 @@ pub mod quorum_waiter_tests;
 
 #[derive(Debug)]
 pub struct QuorumWaiterMessage {
-    /// A serialized `WorkerMessage::Batch` message.
     pub batch: SerializedBatchMessage,
-    /// The cancel handlers to receive the acknowledgements of our broadcast.
     pub handlers: Vec<(PublicKey, CancelHandler)>,
 }
 
-// Define the future type explicitly
 type StakeFuture = Pin<Box<dyn Future<Output = Stake> + Send>>;
 
-/// Tracks the voting status of a single batch
-#[derive(Debug)]
-struct BatchVotingStatus {
+// Separate the voting status into two parts:
+// 1. Cloneable data
+#[derive(Debug, Clone)]
+struct BatchMetadata {
     batch: SerializedBatchMessage,
     total_stake: Stake,
     votes_received: u64,
     digest: String,
     special_txn_id: Option<u64>,
+}
+
+// 2. Non-cloneable futures
+struct BatchVotingStatus {
+    metadata: BatchMetadata,
     wait_for_quorum: FuturesUnordered<StakeFuture>,
 }
 
-/// The QuorumWaiter waits for 2f authorities to acknowledge reception of a batch.
 pub struct QuorumWaiter {
-    /// The committee information.
     committee: Committee,
-    /// The stake of this authority.
     stake: Stake,
-    /// Input Channel to receive commands.
     rx_message: Receiver<QuorumWaiterMessage>,
-    /// Channel to deliver batches for which we have enough acknowledgements.
     tx_batch: Sender<SerializedBatchMessage>,
 }
 
 impl QuorumWaiter {
-    /// Spawn a new QuorumWaiter.
     pub fn spawn(
         committee: Committee,
         stake: Stake,
@@ -73,13 +71,11 @@ impl QuorumWaiter {
         });
     }
 
-    /// Helper function. It waits for a future to complete and then delivers a value.
     async fn waiter(wait_for: CancelHandler, deliver: Stake) -> Stake {
         let _ = wait_for.await;
         deliver
     }
 
-    /// Calculate batch digest
     fn calculate_digest(batch: &[u8]) -> String {
         let hash = Sha512::digest(batch);
         let digest_bytes: [u8; 32] = hash.as_slice()[..32].try_into()
@@ -87,7 +83,6 @@ impl QuorumWaiter {
         format!("{:?}", crypto::Digest(digest_bytes))
     }
 
-    /// Process a new batch and return its voting status
     fn process_new_batch(
         &self,
         batch: &SerializedBatchMessage,
@@ -112,12 +107,16 @@ impl QuorumWaiter {
                     })
                     .collect();
 
-                Some(BatchVotingStatus {
+                let metadata = BatchMetadata {
                     batch: batch.clone(),
-                    total_stake: self.stake, // Start with own stake
+                    total_stake: self.stake,
                     votes_received: 0,
                     digest: digest.to_string(),
                     special_txn_id,
+                };
+
+                Some(BatchVotingStatus {
+                    metadata,
                     wait_for_quorum,
                 })
             },
@@ -128,72 +127,82 @@ impl QuorumWaiter {
         }
     }
 
-    /// Main loop.
+    async fn process_batch_votes(
+        status: &mut BatchVotingStatus,
+        committee: &Committee,
+        tx_batch: &Sender<SerializedBatchMessage>,
+    ) -> bool {
+        while let Some(stake) = status.wait_for_quorum.next().await {
+            status.metadata.total_stake += stake;
+            status.metadata.votes_received += 1;
+            debug!("\nReceived vote {} for batch {}", status.metadata.votes_received, status.metadata.digest);
+            debug!("Vote stake value: {}", stake);
+            debug!("Current total stake: {}/{}", status.metadata.total_stake, committee.quorum_threshold());
+
+            if status.metadata.total_stake >= committee.quorum_threshold() {
+                debug!("\n=== Quorum Reached for Batch {} ===", status.metadata.digest);
+                debug!("Final total stake: {}", status.metadata.total_stake);
+                debug!("Total votes received: {}", status.metadata.votes_received);
+                
+                if let Some(txn_id) = status.metadata.special_txn_id {
+                    debug!("Forwarding batch with special_txn_id: {:?}", txn_id);
+                }
+
+                if let Err(e) = tx_batch.send(status.metadata.batch.clone()).await {
+                    warn!("Failed to deliver batch {}: {}", status.metadata.digest, e);
+                } else {
+                    debug!("Successfully forwarded batch {}", status.metadata.digest);
+                    return true; // Batch completed
+                }
+                break;
+            }
+        }
+        false // Batch still needs more votes
+    }
+
     async fn run(&mut self) {
-        // Create a buffer to store batches and their voting status
-        let mut batch_buffer: HashMap<Vec<u8>, BatchVotingStatus> = HashMap::new();
+        // Create a shared batch buffer
+        let batch_buffer: Arc<Mutex<HashMap<Vec<u8>, BatchVotingStatus>>> = Arc::new(Mutex::new(HashMap::new()));
         
-        // Create an interval timer for periodic checks (every 100ms)
-        let mut check_interval = interval(Duration::from_millis(100));
+        // Spawn the parallel batch checker
+        let checker_batch_buffer = batch_buffer.clone();
+        let committee = self.committee.clone();
+        let tx_batch = self.tx_batch.clone();
         
-        loop {
-            tokio::select! {
-                // Branch 1: Receive new messages
-                maybe_message = self.rx_message.recv() => {
-                    let QuorumWaiterMessage { batch, handlers } = match maybe_message {
-                        Some(msg) => msg,
-                        None => break, // Channel closed
-                    };
+        tokio::spawn(async move {
+            let mut check_interval = interval(Duration::from_millis(50));
+            
+            loop {
+                check_interval.tick().await;
+                
+                let mut buffer = checker_batch_buffer.lock().await;
+                let mut completed_batches = Vec::new();
 
-                    let digest = Self::calculate_digest(&batch);
-                    
-                    // Process and store new batch
-                    if let Some(status) = self.process_new_batch(&batch, &digest, handlers) {
-                        batch_buffer.insert(batch.clone(), status);
+                // Process each batch
+                for (key, status) in buffer.iter_mut() {
+                    if Self::process_batch_votes(status, &committee, &tx_batch).await {
+                        completed_batches.push(key.clone());
                     }
                 }
 
-                // Branch 2: Process the timer tick to check quorum
-                _ = check_interval.tick() => {
-                    let mut completed_batches = Vec::new();
-
-                    // Check each batch in the buffer
-                    for (batch_key, status) in batch_buffer.iter_mut() {
-                        // Process any new votes that have arrived
-                        while let Some(stake) = status.wait_for_quorum.next().await {
-                            status.total_stake += stake;
-                            status.votes_received += 1;
-                            debug!("\nReceived vote {} for batch {}", status.votes_received, status.digest);
-                            debug!("Vote stake value: {}", stake);
-                            debug!("Current total stake: {}/{}", status.total_stake, self.committee.quorum_threshold());
-
-                            // Check if we've reached quorum immediately after receiving a vote
-                            if status.total_stake >= self.committee.quorum_threshold() {
-                                debug!("\n=== Quorum Reached for Batch {} ===", status.digest);
-                                debug!("Final total stake: {}", status.total_stake);
-                                debug!("Total votes received: {}", status.votes_received);
-                                
-                                if let Some(txn_id) = status.special_txn_id {
-                                    debug!("Forwarding batch with special_txn_id: {:?}", txn_id);
-                                }
-
-                                // Send the batch that reached quorum
-                                if let Err(e) = self.tx_batch.send(status.batch.clone()).await {
-                                    warn!("Failed to deliver batch {}: {}", status.digest, e);
-                                } else {
-                                    debug!("Successfully forwarded batch {}", status.digest);
-                                    completed_batches.push(batch_key.clone());
-                                }
-                                break;  // Exit the vote processing loop once quorum is reached
-                            }
-                        }
-                    }
-
-                    // Remove completed batches from buffer
-                    for batch_key in completed_batches {
-                        batch_buffer.remove(&batch_key);
-                    }
+                // Remove completed batches
+                for key in completed_batches {
+                    buffer.remove(&key);
                 }
+
+                // Drop the lock
+                drop(buffer);
+            }
+        });
+        
+        // Main loop only handles new messages
+        while let Some(QuorumWaiterMessage { batch, handlers }) = self.rx_message.recv().await {
+            let digest = Self::calculate_digest(&batch);
+            
+            // Process and store new batch
+            if let Some(status) = self.process_new_batch(&batch, &digest, handlers) {
+                let mut buffer = batch_buffer.lock().await;
+                buffer.insert(batch.clone(), status);
             }
         }
     }

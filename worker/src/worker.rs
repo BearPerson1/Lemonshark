@@ -17,13 +17,17 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
 use tokio::sync::mpsc::{channel, Sender};
+use ed25519_dalek::Sha512;
+use ed25519_dalek::Digest as OtherDigest;
+use std::convert::TryInto;
+
 
 #[cfg(test)]
 #[path = "tests/worker_tests.rs"]
 pub mod worker_tests;
 
 /// The default channel capacity for each channel of the worker.
-pub const CHANNEL_CAPACITY: usize = 1_000;
+pub const CHANNEL_CAPACITY: usize = 1000;
 
 /// The primary round number.
 // TODO: Move to the primary.
@@ -229,7 +233,7 @@ impl Worker {
             self.store.clone(),
             /* rx_batch */ rx_processor,
             /* tx_digest */ tx_primary,
-            /* own_batch */ false,
+            /* own_batch */ true,
         );
 
         info!(
@@ -276,11 +280,21 @@ impl MessageHandler for WorkerReceiverHandler {
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized) {
             Ok(WorkerMessage::Batch(batch, special_txn_id)) => {
-                //debug!("Worker received batch with special_txn_id: {:?}", special_txn_id);
-                self.tx_processor
-                    .send(serialized.to_vec())
-                    .await
-                    .expect("Failed to send batch")
+         
+                let mut hasher = Sha512::new();
+                hasher.update(&serialized);
+                let hash = hasher.finalize();
+                // Fix the array conversion
+                let digest_bytes: [u8; 32] = hash[..32].try_into()
+                    .expect("Failed to create digest");
+                let digest = format!("{:?}", crypto::Digest(digest_bytes));
+                debug!("Worker received batch with digest: {}", digest);
+
+
+                // self.tx_processor
+                //     .send(serialized.to_vec())
+                //     .await
+                //     .expect("Failed to send batch")
             }
             Ok(WorkerMessage::BatchRequest(missing, requestor)) => self
                 .tx_helper

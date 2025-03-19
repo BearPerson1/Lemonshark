@@ -57,11 +57,12 @@ impl Processor {
                         WorkerPrimaryMessage::OurBatch(digest, id, special_txn_id)
                     }
                     false => {
-                        debug!(
-                            "Worker {} sending OthersBatch to primary - Digest: {}",
-                            id, digest
-                        );
-                        WorkerPrimaryMessage::OthersBatch(digest, id)
+                        // debug!(
+                        //     "Worker {} sending OthersBatch to primary - Digest: {}",
+                        //     id, digest
+                        // );
+                        //WorkerPrimaryMessage::OthersBatch(digest, id)
+                        continue;
                     }
                 };
 
