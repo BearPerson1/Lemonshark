@@ -285,6 +285,7 @@ async fn main() -> Result<()> {
         .args_from_usage("--rate=<INT> 'The rate (txs/s) at which to send the transactions'")
         .args_from_usage("--nodes=[ADDR]... 'Network addresses that must be reachable before starting the benchmark.'")
         .args_from_usage("--longest_causal_chain=<INT> 'The longest causal chain value'")
+        .args_from_usage("--node-wait-time=<INT> 'Time to wait after nodes are reachable (seconds)'") 
         .setting(AppSettings::ArgRequiredElseHelp)
         .args_from_usage("--primary-client-port=[PORT] 'Port for primary-to-client communication'")
         .get_matches();
@@ -320,6 +321,12 @@ async fn main() -> Result<()> {
         .unwrap()
         .parse::<u64>()
         .context("The longest_causal_chain must be a non-negative integer")?;
+
+    let node_wait_time = matches
+        .value_of("node-wait-time")
+        .unwrap() 
+        .parse::<u64>()
+        .context("The node wait time must be a non-negative integer")?;
     info!("Node address: {}", target);
 
     // NOTE: This log entry is used to compute performance.
@@ -352,6 +359,7 @@ async fn main() -> Result<()> {
         longest_causal_chain,
         // Lemonshark: this is the address the client should listen too messages on
         primary_to_client_addr,
+        node_wait_time,
     };
 
     // Wait for all nodes to be online and synchronized.
@@ -368,6 +376,7 @@ struct Client {
     nodes: Vec<SocketAddr>,
     longest_causal_chain: u64,
     primary_to_client_addr: SocketAddr,
+    node_wait_time: u64,
 }
 
 impl Client {
@@ -531,7 +540,8 @@ impl Client {
         }))
         .await;
         info!("All nodes are now online and reachable");
-        sleep(Duration::from_secs(5)).await;
-        debug!("Ready to proceed");
+        info!("Waiting {} seconds for system stabilization...", self.node_wait_time);
+        sleep(Duration::from_secs(self.node_wait_time)).await;
+        info!("Ready to proceed");
     }
 }

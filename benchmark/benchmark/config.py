@@ -327,6 +327,8 @@ class BenchParameters:
             if self.longest_causal_chain < 0:
                 raise ConfigError('longest_causal_chain must be non-negative')
 
+            self.node_wait_time = int(json.get('node_wait_time', 5))
+
             if 'protocol' not in json:
                 self.protocol = 'tusk'
             elif json['protocol'] == 'tusk' or json['protocol'] == 'dolphin':

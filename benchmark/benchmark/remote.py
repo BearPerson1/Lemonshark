@@ -258,7 +258,8 @@ class Bench:
                     rate_share,
                     [x for y in workers_addresses for _, x in y],
                     longest_causal_chain=bench_parameters.longest_causal_chain,
-                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
+                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1]),
+                    node_wait_time =  bench_parameters.node_wait_time
                 )
                 log_file = PathMaker.client_log_file(i, id)
                 self._background_run(host, cmd, log_file)
