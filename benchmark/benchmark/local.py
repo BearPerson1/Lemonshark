@@ -80,21 +80,6 @@ class LocalBench:
             primary_to_client_addresses = committee.primary_to_client_addresses(self.faults)  # Already filtered
             rate_share = ceil(rate / committee.workers())
 
-            # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
-            for i, addresses in enumerate(workers_addresses):
-                primary_client_addr = committee.ip(primary_to_client_addresses[i])
-                for (id, address) in addresses:
-                    cmd = CommandMaker.run_client(
-                        address,
-                        self.tx_size,
-                        rate_share,
-                        [x for y in workers_addresses for _, x in y],
-                        longest_causal_chain = self.longest_causal_chain,
-                        primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
-                    )
-                    log_file = PathMaker.client_log_file(i, id)
-                    self._background_run(cmd, log_file)
-
             # Run the primaries (only non-faulty ones)
             for i, address in enumerate(committee.primary_addresses(self.faults)):
                 cmd = CommandMaker.run_primary(
@@ -119,6 +104,21 @@ class LocalBench:
                         debug=debug
                     )
                     log_file = PathMaker.worker_log_file(i, id)
+                    self._background_run(cmd, log_file)
+
+             # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
+            for i, addresses in enumerate(workers_addresses):
+                primary_client_addr = committee.ip(primary_to_client_addresses[i])
+                for (id, address) in addresses:
+                    cmd = CommandMaker.run_client(
+                        address,
+                        self.tx_size,
+                        rate_share,
+                        [x for y in workers_addresses for _, x in y],
+                        longest_causal_chain = self.longest_causal_chain,
+                        primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
+                    )
+                    log_file = PathMaker.client_log_file(i, id)
                     self._background_run(cmd, log_file)
 
             # Wait for all transactions to be processed.

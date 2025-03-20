@@ -210,27 +210,10 @@ class Bench:
         hosts = committee.ips()
         self.kill(hosts=hosts, delete_logs=True)
 
-        # Run the clients (they will wait for the nodes to be ready).
-        Print.info('Booting clients...')
+       
         workers_addresses = committee.workers_addresses(faults)  # Already filtered for faults
         primary_to_client_addresses = committee.primary_to_client_addresses(faults)  # Already filtered
         rate_share = ceil(rate / committee.workers())
-
-        # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
-        for i, addresses in enumerate(workers_addresses):
-            primary_client_addr = committee.ip(primary_to_client_addresses[i])
-            for (id, address) in addresses:
-                host = Committee.ip(address)
-                cmd = CommandMaker.run_client(
-                    address,
-                    bench_parameters.tx_size,
-                    rate_share,
-                    [x for y in workers_addresses for _, x in y],
-                    longest_causal_chain=bench_parameters.longest_causal_chain,
-                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
-                )
-                log_file = PathMaker.client_log_file(i, id)
-                self._background_run(host, cmd, log_file)
 
         # Run the primaries (except the faulty ones).
         Print.info('Booting primaries...')
@@ -262,6 +245,23 @@ class Bench:
                 log_file = PathMaker.worker_log_file(i, id)
                 self._background_run(host, cmd, log_file)
 
+        # Run the clients (they will wait for the nodes to be ready).
+        Print.info('Booting clients...')
+        # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
+        for i, addresses in enumerate(workers_addresses):
+            primary_client_addr = committee.ip(primary_to_client_addresses[i])
+            for (id, address) in addresses:
+                host = Committee.ip(address)
+                cmd = CommandMaker.run_client(
+                    address,
+                    bench_parameters.tx_size,
+                    rate_share,
+                    [x for y in workers_addresses for _, x in y],
+                    longest_causal_chain=bench_parameters.longest_causal_chain,
+                    primary_client_port=int(primary_to_client_addresses[i].split(':')[1])
+                )
+                log_file = PathMaker.client_log_file(i, id)
+                self._background_run(host, cmd, log_file)
         # Wait for all transactions to be processed.
         duration = bench_parameters.duration
         for _ in progress_bar(range(20), prefix=f'Running benchmark ({duration} sec):'):

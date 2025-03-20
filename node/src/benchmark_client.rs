@@ -513,13 +513,25 @@ impl Client {
 
     pub async fn wait(&self) {
         info!("Waiting for all nodes to be online...");
+        debug!("Will attempt to connect to the following addresses:");
+        for addr in &self.nodes {
+            debug!("  - {}", addr);
+        }
+        
         join_all(self.nodes.iter().cloned().map(|address| {
             tokio::spawn(async move {
-                while TcpStream::connect(address).await.is_err() {
+                let mut attempts = 1;
+                while TcpStream::connect(&address).await.is_err() {
+                    debug!("Connection attempt {} to {} failed, retrying in 10ms", attempts, address);
                     sleep(Duration::from_millis(10)).await;
+                    attempts += 1;
                 }
+                info!("Successfully connected to {}", address);
             })
         }))
         .await;
+        info!("All nodes are now online and reachable");
+        sleep(Duration::from_secs(5)).await;
+        debug!("Ready to proceed");
     }
 }
