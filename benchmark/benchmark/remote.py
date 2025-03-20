@@ -248,6 +248,7 @@ class Bench:
         # Run the clients (they will wait for the nodes to be ready).
         Print.info('Booting clients...')
         # Spawn clients for each worker address (these are already filtered for non-faulty primaries)
+        # In the _run_single method:
         for i, addresses in enumerate(workers_addresses):
             primary_client_addr = committee.ip(primary_to_client_addresses[i])
             for (id, address) in addresses:
@@ -259,11 +260,17 @@ class Bench:
                     [x for y in workers_addresses for _, x in y],
                     longest_causal_chain=bench_parameters.longest_causal_chain,
                     primary_client_port=int(primary_to_client_addresses[i].split(':')[1]),
-                    node_wait_time =  bench_parameters.node_wait_time
+                    node_wait_time=bench_parameters.node_wait_time,
+                    primary_addresses=committee.primary_addresses(faults)  # Add this line
                 )
                 log_file = PathMaker.client_log_file(i, id)
                 self._background_run(host, cmd, log_file)
+
+
         # Wait for all transactions to be processed.
+
+
+
         duration = bench_parameters.duration
         for _ in progress_bar(range(20), prefix=f'Running benchmark ({duration} sec):'):
             sleep(ceil(duration / 20))

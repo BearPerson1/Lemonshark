@@ -284,6 +284,7 @@ async fn main() -> Result<()> {
         .args_from_usage("--size=<INT> 'The size of each transaction in bytes'")
         .args_from_usage("--rate=<INT> 'The rate (txs/s) at which to send the transactions'")
         .args_from_usage("--nodes=[ADDR]... 'Network addresses that must be reachable before starting the benchmark.'")
+        .args_from_usage("--primary-addresses=[ADDR]... 'Network addresses of primary nodes that must be reachable.'")  
         .args_from_usage("--longest_causal_chain=<INT> 'The longest causal chain value'")
         .args_from_usage("--node-wait-time=<INT> 'Time to wait after nodes are reachable (seconds)'") 
         .setting(AppSettings::ArgRequiredElseHelp)
@@ -327,6 +328,15 @@ async fn main() -> Result<()> {
         .unwrap() 
         .parse::<u64>()
         .context("The node wait time must be a non-negative integer")?;
+
+    let primary_addresses = matches
+        .values_of("primary-addresses")
+        .unwrap_or_default()
+        .into_iter()
+        .map(|x| x.parse::<SocketAddr>())
+        .collect::<Result<Vec<_>, _>>()
+        .context("Invalid socket address format")?;
+
     info!("Node address: {}", target);
 
     // NOTE: This log entry is used to compute performance.
@@ -356,6 +366,7 @@ async fn main() -> Result<()> {
         size,
         rate,
         nodes,
+        primary_addresses, 
         longest_causal_chain,
         // Lemonshark: this is the address the client should listen too messages on
         primary_to_client_addr,
@@ -374,6 +385,7 @@ struct Client {
     size: usize,
     rate: u64,
     nodes: Vec<SocketAddr>,
+    primary_addresses: Vec<SocketAddr>,  // Add this line
     longest_causal_chain: u64,
     primary_to_client_addr: SocketAddr,
     node_wait_time: u64,
@@ -519,15 +531,20 @@ impl Client {
         Ok(())
     }
 
-
     pub async fn wait(&self) {
         info!("Waiting for all nodes to be online...");
-        debug!("Will attempt to connect to the following addresses:");
+        debug!("Will attempt to connect to the following worker addresses:");
         for addr in &self.nodes {
             debug!("  - {}", addr);
         }
+        debug!("Will attempt to connect to the following primary addresses:");
+        for addr in &self.primary_addresses {
+            debug!("  - {}", addr);
+        }
         
-        join_all(self.nodes.iter().cloned().map(|address| {
+        let all_addresses = self.nodes.iter().chain(self.primary_addresses.iter()).cloned();
+        
+        join_all(all_addresses.map(|address| {
             tokio::spawn(async move {
                 let mut attempts = 1;
                 while TcpStream::connect(&address).await.is_err() {
@@ -539,7 +556,8 @@ impl Client {
             })
         }))
         .await;
-        info!("All nodes are now online and reachable");
+        
+        info!("All nodes (workers and primaries) are now online and reachable");
         info!("Waiting {} seconds for system stabilization...", self.node_wait_time);
         sleep(Duration::from_secs(self.node_wait_time)).await;
         info!("Ready to proceed");
