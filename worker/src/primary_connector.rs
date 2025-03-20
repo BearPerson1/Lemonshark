@@ -1,7 +1,7 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::worker::SerializedBatchDigestMessage;
 use bytes::Bytes;
-use network::ReliableSender;  
+use network::SimpleSender;  
 use std::net::SocketAddr;
 use tokio::sync::mpsc::Receiver;
 use log::debug;  // Added for debug logging
@@ -13,7 +13,7 @@ pub struct PrimaryConnector {
     /// Input channel to receive the digests to send to the primary.
     rx_digest: Receiver<SerializedBatchDigestMessage>,
     /// A network sender to send the batches' digests to the primary.
-    network: ReliableSender,  
+    network: SimpleSender,  
 }
 
 impl PrimaryConnector {
@@ -22,7 +22,7 @@ impl PrimaryConnector {
             Self {
                 primary_address,
                 rx_digest,
-                network: ReliableSender::new(),  // Changed from 
+                network: SimpleSender::new(),  // Changed from 
             }
             .run()
             .await;
@@ -36,17 +36,20 @@ impl PrimaryConnector {
             
             debug!("Sending batch digest {:?} to primary at {}", digest, self.primary_address);
             debug!("Channel Capacity: {}",self.rx_digest.capacity());
-            // Use the reliable sender and get the cancel handler
-            let handler = self.network
-                .send(self.primary_address, bytes)
+            self.network
+                .send(self.primary_address,bytes)
                 .await;
+            // Use the reliable sender and get the cancel handler
+            // let handler = self.network
+            //     .send(self.primary_address, bytes)
+            //     .await;
 
-            // Wait for the message to be delivered or cancelled
-            if let Ok(_) = handler.await {
-                debug!("Batch digest {:?} successfully delivered to primary at {}", digest, self.primary_address);
-            } else {
-                debug!("Failed to deliver batch digest to primary at {}", self.primary_address);
-            }
+            // // Wait for the message to be delivered or cancelled
+            // if let Ok(_) = handler.await {
+            //     debug!("Batch digest {:?} successfully delivered to primary at {}", digest, self.primary_address);
+            // } else {
+            //     debug!("Failed to deliver batch digest to primary at {}", self.primary_address);
+            // }
         }
     }
 }
