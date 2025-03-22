@@ -47,7 +47,7 @@ class CommandMaker:
                 f'--store {store} --parameters {parameters} worker --id {id}')
                 
     @staticmethod
-    def run_client(address, size, rate, nodes, longest_causal_chain=1, primary_client_port=None, node_wait_time=5, primary_addresses=None): 
+    def run_client(address, size, rate, nodes, longest_causal_chain=1, primary_client_port=None, node_wait_time=5, primary_addresses=None, client_addresses=None): 
         assert isinstance(address, str)
         assert isinstance(size, int) and size > 0
         assert isinstance(rate, int) and rate >= 0
@@ -57,9 +57,11 @@ class CommandMaker:
         assert isinstance(node_wait_time, int) and node_wait_time >= 0
         assert all(isinstance(x, str) for x in nodes)
         assert primary_addresses is None or isinstance(primary_addresses, list)
+        assert client_addresses is None or isinstance(client_addresses, list)
         
         nodes = f'--nodes {" ".join(nodes)}' if nodes else ''
         primary_addresses = f'--primary-addresses {" ".join(primary_addresses)}' if primary_addresses else ''
+        client_addresses = f'--client-addresses {" ".join(client_addresses)}' if client_addresses else ''
         
         return (
             f'./benchmark_client {address} '
@@ -67,6 +69,7 @@ class CommandMaker:
             f'--rate {rate} '
             f'{nodes} '
             f'{primary_addresses} '
+            f'{client_addresses} '
             f'--longest_causal_chain {longest_causal_chain} '
             f'--primary-client-port {primary_client_port} '
             f'--node-wait-time {node_wait_time}'

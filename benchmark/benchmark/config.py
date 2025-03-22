@@ -112,6 +112,21 @@ class Committee:
             addresses += [authority['primary']['primary_to_client']]
     
         return addresses
+    
+    def client_addresses(self, faults=0):
+        ''' Returns a list of transaction addresses from worker nodes. '''
+        assert faults < self.size()
+        addresses = []
+        good_nodes = self.size() - faults
+        
+        # Only include addresses for non-faulty nodes
+        for authority in list(self.json['authorities'].values())[:good_nodes]:
+            # Get all worker transaction addresses
+            for worker in authority['workers'].values():
+                if worker['transactions'] not in addresses:  # Avoid duplicates
+                    addresses.append(worker['transactions'])
+        
+        return addresses
 
     # def _get_good_nodes(self, faults):
     #     """Helper method to ensure consistent random selection between calls"""

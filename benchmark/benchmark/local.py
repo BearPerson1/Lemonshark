@@ -118,7 +118,8 @@ class LocalBench:
                         longest_causal_chain=self.longest_causal_chain,
                         primary_client_port=int(primary_to_client_addresses[i].split(':')[1]),
                         node_wait_time=self.node_wait_time,
-                        primary_addresses=committee.primary_addresses(self.faults)  # Add this line
+                        primary_addresses=committee.primary_addresses(self.faults),
+                        client_addresses=committee.client_addresses(self.faults)
                     )
                     log_file = PathMaker.client_log_file(i, id)
                     self._background_run(cmd, log_file)
