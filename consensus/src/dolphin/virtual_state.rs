@@ -124,24 +124,47 @@ impl VirtualState {
 
     /// Returns the certificate (and the certificate's digest) originated by the steady-state leader
     /// of the specified round (if any).
+    // pub fn steady_leader(&self, wave: Round) -> Option<&(Digest, Certificate)> {
+
+    //     let seed = wave;
+
+    //     // Elect the leader.
+    //     let mut keys: Vec<_> = self.committee.authorities.keys().cloned().collect();
+    //     keys.sort();
+    //     let leader = keys[seed as usize % self.committee.size()];
+
+    //     // Return its certificate and the certificate's digest.
+    //     let round = match wave {
+    //         0 => 0,
+    //         _ => wave * 2 - 1,
+    //     };
+
+    //     debug!("Supposed leader (Steady): {}, round: {}",self.committee.get_primary_id(&leader),round);
+    //     self.dag.get(&round).map(|x| x.get(&leader)).flatten()
+    // }
+
     pub fn steady_leader(&self, wave: Round) -> Option<&(Digest, Certificate)> {
-
-        let seed = wave;
-
-        // Elect the leader.
+        // Use SHA256 hash of wave number for randomization
+        let mut hasher = Sha256::new();
+        hasher.update(wave.to_le_bytes());
+        let result = hasher.finalize();
+        let coin = u64::from_le_bytes(result[..8].try_into().unwrap());
+    
+        // Elect the leader using random selection
         let mut keys: Vec<_> = self.committee.authorities.keys().cloned().collect();
         keys.sort();
-        let leader = keys[seed as usize % self.committee.size()];
-
-        // Return its certificate and the certificate's digest.
+        let leader = keys[coin as usize % self.committee.size()];
+    
+        // Return its certificate and the certificate's digest
         let round = match wave {
             0 => 0,
             _ => wave * 2 - 1,
         };
-
-        debug!("Supposed leader (Steady): {}, round: {}",self.committee.get_primary_id(&leader),round);
+    
+        debug!("Supposed leader (Steady): {}, round: {}", self.committee.get_primary_id(&leader), round);
         self.dag.get(&round).map(|x| x.get(&leader)).flatten()
     }
+    
 
     /// Returns the certificate (and the certificate's digest) originated by the fallback leader
     /// of the specified round (if any).
