@@ -356,6 +356,12 @@ class LogParser:
                 total_time = latest_end - earliest_start
                 time_per_tx = total_time / last_tx_num
                 per_tx_times.append(time_per_tx)
+                print(f"\nClient {client_index} Analysis:")
+                print(f"  - Total transactions started: {len(self.cc_start[client_index])}")
+                print(f"  - Total transactions completed: {len(self.cc_end[client_index])}")
+                print(f"  - Total duration: {total_time:.3f}s")
+                print(f"  - Average time per transaction: {time_per_tx*1000:.2f}ms")
+            
         
         # Return the average time per transaction across all clients and incomplete status
         return mean(per_tx_times) if per_tx_times else 0, has_incomplete

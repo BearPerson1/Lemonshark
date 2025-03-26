@@ -374,6 +374,29 @@ impl Dolphin {
                             info!("Committed {} -> {:?}", certificate.header, digest);
                         }
 
+                            // Check if we need to send a client message
+                        if certificate.header.casual_transaction && certificate.header.author == self.name {
+                            // Create clones only if we need to spawn
+                            let certificate_clone = certificate.clone();
+                            let tx_client_clone = self.tx_client.clone();
+                            
+                            tokio::spawn(async move {
+                                let msg = ClientMessage {
+                                    header: certificate_clone.header.clone(),
+                                    message_type: 1,  // 1 for Certificate
+                                };
+                                
+                                if let Err(e) = tx_client_clone.send(msg).await {
+                                    warn!("Failed to send certificate to client: {}", e);
+                                } else {
+                                    debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
+                                        certificate_clone.header.round,
+                                        certificate_clone.header.shard_num
+                                    );
+                                }
+                            });
+                        }
+
                         self.tx_commit
                             .send(certificate.clone())
                             .await
@@ -400,27 +423,27 @@ impl Dolphin {
                     let certificate_clone = certificate.clone();
 
 
-                    // send the stuff to the client (causal transactions)
-                    tokio::spawn(async move {
-                        if certificate_clone.header.casual_transaction && certificate_clone.header.author == name {
-                            let msg = ClientMessage {
-                                header: certificate_clone.header.clone(),
-                                message_type: 1,  // 1 for Certificate
-                            };
+                    // // send the stuff to the client (causal transactions)
+                    // tokio::spawn(async move {
+                    //     if certificate_clone.header.casual_transaction && certificate_clone.header.author == name {
+                    //         let msg = ClientMessage {
+                    //             header: certificate_clone.header.clone(),
+                    //             message_type: 1,  // 1 for Certificate
+                    //         };
                     
-                            if let Err(e) = tx_client_clone.send(msg).await {
-                                warn!("Failed to send certificate to client: {}", e);
-                            } else {
-                                debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
-                                    certificate_clone.header.round,
-                                    certificate_clone.header.shard_num
-                                );
-                            }
-                        }
-                    });
+                    //         if let Err(e) = tx_client_clone.send(msg).await {
+                    //             warn!("Failed to send certificate to client: {}", e);
+                    //         } else {
+                    //             debug!("Successfully sent committed certificate to client - Round: {}, Shard: {}",
+                    //                 certificate_clone.header.round,
+                    //                 certificate_clone.header.shard_num
+                    //             );
+                    //         }
+                    //     }
+                    // });
 
-                    let tx_client_clone = self.tx_client.clone();
-                    let name = self.name;
+                    // let tx_client_clone = self.tx_client.clone();
+                    // let name = self.name;
 
                     tokio::spawn(async move {
                         let early_commit_result = {
@@ -448,7 +471,7 @@ impl Dolphin {
                                     header,
                                     message_type: 1,
                                 };
-
+                                debug!("Sending early committed certificate to client - Round: {}, Shard: {}", certificate.header.round, certificate.header.shard_num);
                                 if let Err(e) = tx_client_clone.send(msg).await {
                                     warn!("Failed to send early commit certificate to client: {}", e);
                                 } else {

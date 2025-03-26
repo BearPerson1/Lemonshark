@@ -432,7 +432,11 @@ impl Client {
                     // Spawn separate task for handling causal chain messages
             let size = self.size;
             let longest_causal_chain = self.longest_causal_chain;
+            let node_wait_time = self.node_wait_time;
             causal_handle = Some(tokio::spawn(async move {
+                info!("Waiting {} seconds before starting causal transactions...", node_wait_time);
+                sleep(Duration::from_secs(node_wait_time)).await;
+                info!("Starting causal transactions");
                 let mut transport = transport_causal;
                 let mut tx = BytesMut::with_capacity(size);
 
@@ -530,7 +534,7 @@ impl Client {
             }
             counter += 1;
         }
-
+        info!("Finished sending normal transactions");
         // Clean up the causal chain task
         if let Some(handle) = causal_handle {
             handle.abort();
@@ -580,8 +584,6 @@ impl Client {
         .await;
         
         info!("All nodes (workers, primaries, and clients) are now online and reachable");
-        info!("Waiting {} seconds for system stabilization...", self.node_wait_time);
-        sleep(Duration::from_secs(self.node_wait_time)).await;
         info!("Ready to proceed");
     }
 }
