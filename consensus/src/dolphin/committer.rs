@@ -171,15 +171,15 @@ impl Committer {
             };
     
             for (auth_key, _digest, cert) in certs_to_process {
-                debug!("\nChecking Certificate:");
-                debug!("├─ Round: {}", cert.header.round);
-                debug!("├─ Shard: {}", cert.header.shard_num);
-                debug!("├─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
-                debug!("├─ Current SBO: {:?}", cert.header.SBO);
+                // debug!("\nChecking Certificate:");
+                // debug!("├─ Round: {}", cert.header.round);
+                // debug!("├─ Shard: {}", cert.header.shard_num);
+                // debug!("├─ Author: {:?}", self.committee.get_all_primary_ids()[&auth_key]);
+                // debug!("├─ Current SBO: {:?}", cert.header.SBO);
     
                 // Skip if already has SBO
                 if cert.header.SBO.is_some() {
-                    debug!("│  └─ Skipping - Certificate already has SBO value");
+                    // debug!("│  └─ Skipping - Certificate already has SBO value");
                     continue;
                 }
                 
@@ -188,12 +188,12 @@ impl Committer {
                     .get(&cert.header.shard_num)
                     .copied()
                     .unwrap_or(0);
-                debug!("├─ Last Committed Round for Shard {}: {}", cert.header.shard_num, last_committed_round);
+                // debug!("├─ Last Committed Round for Shard {}: {}", cert.header.shard_num, last_committed_round);
     
                 // Skip if round already committed
                 if cert.header.round <= last_committed_round {
-                    debug!("│  └─ Skipping - Certificate round ({}) <= last committed round ({})", 
-                           cert.header.round, last_committed_round);
+                    // debug!("│  └─ Skipping - Certificate round ({}) <= last committed round ({})", 
+                        //    cert.header.round, last_committed_round);
                     continue;
                 }
     
@@ -201,11 +201,11 @@ impl Committer {
     
                 // CASE 1: Certificate is immediately after last committed round
                 if cert.header.round - last_committed_round <= 1 {
-                    debug!("│  Certificate is immediately after last committed round");
+                    // debug!("│  Certificate is immediately after last committed round");
                     
                     if !cert.header.cross_shard.is_empty() {
-                        debug!("│  ├─ Cross-shard certificate detected");
-                        debug!("│  ├─ Target cross-shards: {:?}", cert.header.cross_shard);
+                        // debug!("│  ├─ Cross-shard certificate detected");
+                        // debug!("│  ├─ Target cross-shards: {:?}", cert.header.cross_shard);
                         
                         let cross_shard_parent_round = cert.header.round - 1;
                         let mut all_cross_shards_valid = true;
@@ -217,9 +217,9 @@ impl Committer {
                                 .copied()
                                 .unwrap_or(0);
                             
-                            debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
-                            debug!("│  │  ├─ Cross-shard parent round: {}", cross_shard_parent_round);
-                            debug!("│  │  └─ Last committed cross-shard round: {}", last_committed_cross_shard_parent_round);
+                            // debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
+                            // debug!("│  │  ├─ Cross-shard parent round: {}", cross_shard_parent_round);
+                            // debug!("│  │  └─ Last committed cross-shard round: {}", last_committed_cross_shard_parent_round);
     
                             let parent_recently_committed = cross_shard_parent_round <= last_committed_cross_shard_parent_round;
                             let mut parent_sbo_is_true = false;
@@ -229,7 +229,7 @@ impl Committer {
                                 for (_, (_, parent)) in prev_authorities {
                                     if parent.header.shard_num == target_shard {
                                         parent_sbo_is_true = parent.header.SBO == Some(true);
-                                        debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", parent.header.SBO);
+                                        // debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", parent.header.SBO);
                                         break;
                                     }
                                 }
@@ -243,45 +243,45 @@ impl Committer {
     
                             if !shard_valid {
                                 all_cross_shards_valid = false;
-                                debug!("│  │  └─ Cross-shard validation failed:");
-                                debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
-                                debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
-                                debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
-                                debug!("│  │     └─ Expected success: {}", expected_success);
+                                // debug!("│  │  └─ Cross-shard validation failed:");
+                                // debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
+                                // debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
+                                // debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
+                                // debug!("│  │     └─ Expected success: {}", expected_success);
                                 break;
                             }
                         }
     
                         new_sbo = Some(all_cross_shards_valid);
-                        debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
+                        // debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
     
                     } else {
                         new_sbo = Some(true);
-                        debug!("│  └─ Non cross-shard certificate, setting SBO = true");
+                        // debug!("│  └─ Non cross-shard certificate, setting SBO = true");
                     }
                 } 
                 // CASE 2: Certificate is not immediately after last committed round
                 else {
-                    debug!("│  Checking for parent certificate in previous round");
+                    // debug!("│  Checking for parent certificate in previous round");
                     let mut found_parent = false;
                     if let Some(prev_authorities) = state.dag.get(&(cert.header.round - 1)) {
                         for (_, (_, parent)) in prev_authorities {
                             if parent.header.shard_num == cert.header.shard_num {
                                 found_parent = true;
-                                debug!("│  ├─ Found parent certificate with SBO = {:?}", parent.header.SBO);
+                                // debug!("│  ├─ Found parent certificate with SBO = {:?}", parent.header.SBO);
                                 
                                 // If parent SBO is false, this is also false
                                 if parent.header.SBO == Some(false) {
                                     new_sbo = Some(false);
-                                    debug!("│  └─ Parent has SBO = false, setting current SBO = false");
+                                    // debug!("│  └─ Parent has SBO = false, setting current SBO = false");
                                     break;
                                 } 
                                 // If parent SBO is true, check cross-shards
                                 else if parent.header.SBO == Some(true) {
-                                    debug!("│  ├─ Parent has SBO = true, checking cross-shard conditions");
+                                    // debug!("│  ├─ Parent has SBO = true, checking cross-shard conditions");
                                     
                                     if !cert.header.cross_shard.is_empty() {
-                                        debug!("│  ├─ Certificate has cross-shard references: {:?}", cert.header.cross_shard);
+                                        // debug!("│  ├─ Certificate has cross-shard references: {:?}", cert.header.cross_shard);
                                         
                                         let cross_shard_parent_round = cert.header.round - 1;
                                         let mut all_cross_shards_valid = true;
@@ -292,9 +292,9 @@ impl Committer {
                                                 .copied()
                                                 .unwrap_or(0);
                                                 
-                                            debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
-                                            debug!("│  │  ├─ Parent round: {}", cross_shard_parent_round);
-                                            debug!("│  │  └─ Last committed round: {}", last_committed_cross_shard_parent_round);
+                                            // debug!("│  ├─ Checking cross-shard {} (expected success: {})", target_shard, expected_success);
+                                            // debug!("│  │  ├─ Parent round: {}", cross_shard_parent_round);
+                                            // debug!("│  │  └─ Last committed round: {}", last_committed_cross_shard_parent_round);
     
                                             let parent_recently_committed = cross_shard_parent_round <= last_committed_cross_shard_parent_round;
                                             let mut parent_sbo_is_true = false;
@@ -303,7 +303,7 @@ impl Committer {
                                             for (_, (_, cross_parent)) in prev_authorities {
                                                 if cross_parent.header.shard_num == target_shard {
                                                     parent_sbo_is_true = cross_parent.header.SBO == Some(true);
-                                                    debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", cross_parent.header.SBO);
+                                                    // debug!("│  │  ├─ Found cross-shard parent with SBO: {:?}", cross_parent.header.SBO);
                                                     break;
                                                 }
                                             }
@@ -315,21 +315,21 @@ impl Committer {
     
                                             if !shard_valid {
                                                 all_cross_shards_valid = false;
-                                                debug!("│  │  └─ Cross-shard validation failed:");
-                                                debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
-                                                debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
-                                                debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
-                                                debug!("│  │     └─ Expected success: {}", expected_success);
+                                                // debug!("│  │  └─ Cross-shard validation failed:");
+                                                // debug!("│  │     ├─ Parent recently committed: {}", parent_recently_committed);
+                                                // debug!("│  │     ├─ Parent SBO is true: {}", parent_sbo_is_true);
+                                                // debug!("│  │     ├─ Parent round is 0: {}", cross_shard_parent_round == 0);
+                                                // debug!("│  │     └─ Expected success: {}", expected_success);
                                                 break;
                                             }
                                         }
     
                                         new_sbo = Some(all_cross_shards_valid);
-                                        debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
+                                        // debug!("│  └─ Setting SBO = {} (based on all cross-shard validations)", all_cross_shards_valid);
     
                                     } else {
                                         new_sbo = Some(true);
-                                        debug!("│  └─ Non cross-shard with parent SBO = true, setting SBO = true");
+                                        // debug!("│  └─ Non cross-shard with parent SBO = true, setting SBO = true");
                                     }
                                     break;
                                 }
@@ -338,7 +338,7 @@ impl Committer {
                     }
                     if !found_parent {
                         new_sbo = None;
-                        debug!("│  └─ No parent found in previous round, setting SBO = None");
+                        // debug!("│  └─ No parent found in previous round, setting SBO = None");
                     }
                 }
     
@@ -346,12 +346,12 @@ impl Committer {
                 if let Some(authorities) = state.dag.get_mut(&round) {
                     if let Some(&mut (_, ref mut cert_mut)) = authorities.get_mut(&auth_key) {
                         cert_mut.header.SBO = new_sbo;
-                        debug!("└─ Final SBO value: {:?}", new_sbo);
+                        // debug!("└─ Final SBO value: {:?}", new_sbo);
                     }
                 }
             }
         }
-        debug!("\n=== Completed Safe Block Outcome Check ===\n");
+        // debug!("\n=== Completed Safe Block Outcome Check ===\n");
     }
 
     // TODO: Optimize the code abit
