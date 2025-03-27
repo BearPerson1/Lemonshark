@@ -356,7 +356,10 @@ class LogParser:
                 tx_ids = sorted([tx_id for tx_id in self.cc_start[client_index].keys() 
                             if tx_id in self.cc_end[client_index]])
                 
-                # Calculate durations for each transaction
+                if not tx_ids:  # Skip if no transactions
+                    continue
+
+                # Calculate durations for plotting
                 durations = []
                 for tx_id in tx_ids:
                     start_time = self.cc_start[client_index][tx_id]
@@ -364,8 +367,13 @@ class LogParser:
                     duration = end_time - start_time
                     durations.append(duration)
                 
-                # Calculate average duration for this client
-                avg_duration = np.mean(durations) if durations else 0
+                # New average calculation
+                first_tx_start = self.cc_start[client_index][tx_ids[0]]  # First transaction start
+                last_tx_end = self.cc_end[client_index][tx_ids[-1]]      # Last transaction end
+                total_time = last_tx_end - first_tx_start                # Total time
+                num_transactions = tx_ids[-1]  # Use the last transaction ID as the count
+                avg_duration = total_time / num_transactions if num_transactions > 0 else 0
+                
                 per_tx_times.append(avg_duration)
                 
                 # Create the plot
@@ -376,7 +384,7 @@ class LogParser:
                 plt.ylabel('Duration (seconds)')
                 plt.grid(True, alpha=0.3)
                 
-                # Add average line
+                # Add average line using the new calculation method
                 plt.axhline(y=avg_duration, color='r', linestyle='--', alpha=0.5,
                         label=f'Average Duration: {avg_duration:.3f}s')
                 
@@ -390,11 +398,15 @@ class LogParser:
                 print(f"\nClient {client_index} Analysis:")
                 print(f"  - Total transactions started: {len(self.cc_start[client_index])}")
                 print(f"  - Total transactions completed: {len(self.cc_end[client_index])}")
+                print(f"  - First transaction start time: {first_tx_start}")
+                print(f"  - Last transaction end time: {last_tx_end}")
+                print(f"  - Total time: {total_time:.3f}s")
+                print(f"  - Number of transactions (last ID): {num_transactions}")
                 print(f"  - Average duration: {avg_duration:.3f}s")
                 
         # Return the average time per transaction across all clients and incomplete status
         return mean(per_tx_times) if per_tx_times else 0, has_incomplete
-    
+
     def plot_transaction_latencies(self, latencies):
         """
         Create a line plot of transaction latencies using actual timestamps.
