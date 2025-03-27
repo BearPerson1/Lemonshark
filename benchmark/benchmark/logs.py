@@ -332,6 +332,13 @@ class LogParser:
 
     ## Lemonshark
     def get_causal_transaction_duration(self):
+        import os
+        from matplotlib import pyplot as plt
+        import numpy as np
+        
+        # Create CC-plots directory if it doesn't exist
+        os.makedirs('CC-plots', exist_ok=True)
+        
         per_tx_times = []
         has_incomplete = False
         
@@ -341,28 +348,50 @@ class LogParser:
             for tx_id in self.cc_start[client_index].keys():
                 if tx_id not in self.cc_end[client_index]:
                     has_incomplete = True
-                    break  # We found at least one incomplete, no need to check more
+                    break
             
-            # Calculate average time per transaction for this client
+            # Calculate and plot times for this client
             if self.cc_start[client_index] and self.cc_end[client_index]:
-                # Get the earliest start time
-                earliest_start = min(self.cc_start[client_index].values())
+                # Get all transaction IDs that completed
+                tx_ids = sorted([tx_id for tx_id in self.cc_start[client_index].keys() 
+                            if tx_id in self.cc_end[client_index]])
                 
-                # Get the latest end time and its transaction number
-                latest_end = max(self.cc_end[client_index].values())
-                last_tx_num = max(self.cc_end[client_index].keys())
+                # Calculate durations for each transaction
+                durations = []
+                for tx_id in tx_ids:
+                    start_time = self.cc_start[client_index][tx_id]
+                    end_time = self.cc_end[client_index][tx_id]
+                    duration = end_time - start_time
+                    durations.append(duration)
                 
-                # Calculate time per transaction
-                total_time = latest_end - earliest_start
-                time_per_tx = total_time / last_tx_num
-                per_tx_times.append(time_per_tx)
+                # Calculate average duration for this client
+                avg_duration = np.mean(durations) if durations else 0
+                per_tx_times.append(avg_duration)
+                
+                # Create the plot
+                plt.figure(figsize=(12, 6))
+                plt.plot(tx_ids, durations, '-o', markersize=3, alpha=0.6)
+                plt.title(f'Causal Transaction Durations - Client {client_index}')
+                plt.xlabel('Transaction ID')
+                plt.ylabel('Duration (seconds)')
+                plt.grid(True, alpha=0.3)
+                
+                # Add average line
+                plt.axhline(y=avg_duration, color='r', linestyle='--', alpha=0.5,
+                        label=f'Average Duration: {avg_duration:.3f}s')
+                
+                plt.legend()
+                plt.tight_layout()
+                
+                # Save the plot
+                plt.savefig(f'CC-plots/client_{client_index}_durations.png')
+                plt.close()
+                
                 print(f"\nClient {client_index} Analysis:")
                 print(f"  - Total transactions started: {len(self.cc_start[client_index])}")
                 print(f"  - Total transactions completed: {len(self.cc_end[client_index])}")
-                print(f"  - Total duration: {total_time:.3f}s")
-                print(f"  - Average time per transaction: {time_per_tx*1000:.2f}ms")
-            
-        
+                print(f"  - Average duration: {avg_duration:.3f}s")
+                
         # Return the average time per transaction across all clients and incomplete status
         return mean(per_tx_times) if per_tx_times else 0, has_incomplete
     
