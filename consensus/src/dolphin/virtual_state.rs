@@ -144,23 +144,58 @@ impl VirtualState {
     // }
 
     pub fn steady_leader(&self, wave: Round) -> Option<&(Digest, Certificate)> {
-        // Use SHA256 hash of wave number for randomization
+        // Get sorted list of keys
+        let mut keys: Vec<_> = self.committee.authorities.keys().cloned().collect();
+        keys.sort();
+    
+        // If this is wave 0, just select a leader normally
+        if wave == 0 {
+            let mut hasher = Sha256::new();
+            hasher.update(wave.to_le_bytes());
+            let result = hasher.finalize();
+            let coin = u64::from_le_bytes(result[..8].try_into().unwrap());
+            let leader = keys[coin as usize % self.committee.size()];
+    
+            return self.dag.get(&0).map(|x| x.get(&leader)).flatten();
+        }
+    
+        // Calculate the leader for current wave
         let mut hasher = Sha256::new();
         hasher.update(wave.to_le_bytes());
         let result = hasher.finalize();
-        let coin = u64::from_le_bytes(result[..8].try_into().unwrap());
+        let mut coin = u64::from_le_bytes(result[..8].try_into().unwrap());
+        
+        // Calculate the previous wave's leader
+        let mut prev_hasher = Sha256::new();
+        prev_hasher.update((wave - 1).to_le_bytes());
+        let prev_result = prev_hasher.finalize();
+        let prev_coin = u64::from_le_bytes(prev_result[..8].try_into().unwrap());
+        let prev_leader = keys[prev_coin as usize % self.committee.size()];
     
-        // Elect the leader using random selection
-        let mut keys: Vec<_> = self.committee.authorities.keys().cloned().collect();
-        keys.sort();
-        let leader = keys[coin as usize % self.committee.size()];
+        // Find a leader that's different from the previous wave
+        let mut leader;
+        let mut attempts = 0;
+        loop {
+            leader = keys[coin as usize % self.committee.size()].clone();
+            
+            // If this leader is different from the previous wave's leader, use it
+            if leader != prev_leader {
+                break;
+            }
+            
+            // If we've tried too many times, just use this leader to prevent infinite loop
+            if attempts > self.committee.size() {
+                break;
+            }
+            
+            // Try next possible leader
+            coin = coin.wrapping_add(1);
+            attempts += 1;
+        }
     
         // Return its certificate and the certificate's digest
-        let round = match wave {
-            0 => 0,
-            _ => wave * 2 - 1,
-        };
-    
+        let round = wave * 2 - 1;
+        
         debug!("Supposed leader (Steady): {}, round: {}", self.committee.get_primary_id(&leader), round);
         self.dag.get(&round).map(|x| x.get(&leader)).flatten()
     }
