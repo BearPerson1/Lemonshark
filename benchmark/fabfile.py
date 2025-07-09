@@ -39,7 +39,7 @@ def local(ctx, debug=True):
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
         'cert_timeout': 100, # ms
         'cross_shard_count':4,
-        'multi_home_appearance_rate': 0.1,
+        'multi_home_appearance_rate': 1.0,
         'faults': FAULTS
         
     }
