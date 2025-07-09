@@ -13,19 +13,19 @@ from benchmark.remote import Bench, BenchError
 def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
-        'faults': 0,
-        'nodes': 4,
+        'faults': 3,
+        'nodes': 10,
         'workers': 1,
-        'rate': 70_000,
+        'rate': 10000,
         'tx_size': 512,
-        'duration': 50, # note to consider node_wait_time
+        'duration': 100, # note to consider node_wait_time
         'protocol': 'dolphin',
-        'longest_causal_chain':0, # longest chain of causally dependant trans a client will send
-        'node_wait_time': 10 # how long a node will sleep before processing a transaction
+        'longest_causal_chain':100, # longest chain of causally dependant trans a client will send
+        'node_wait_time': 0 # how long a node will sleep before processing a causal transaction
     }
     node_params = {
         'timeout': 5_000,  # ms
-        'header_size': 50,  # bytes
+        'header_size': 1000,  # bytes
         'max_header_delay': 200,  # ms
         'gc_depth': 50,  # rounds
         'sync_retry_delay': 1000,  # ms
@@ -33,16 +33,17 @@ def local(ctx, debug=True):
         'batch_size': 500_000,  # bytes
         'max_batch_delay': 200,  # ms
         'cross_shard_occurance_rate': 0.0, # how often we do cross-shards, this will affect early commit chances
-        'cross_shard_failure_rate': 0.2, 
-        'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
+        'cross_shard_failure_rate': 0.33, 
+        'causal_transactions_collision_rate':.5, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
         'cert_timeout': 100, # ms
-        'cross_shard_count':5
+        'cross_shard_count':4,
+        'multi_home_appearance_rate': 0.1
         
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)
-        print(ret.result())
+        print(ret.result()) 
     except BenchError as e:
         Print.error(e)
 
@@ -110,11 +111,11 @@ def remote(ctx, debug=False):
         'collocate': True,
         'rate': [20_000],
         'tx_size': 512,
-        'duration': 150,  # note to consider node_wait_time
+        'duration': 50,  # note to consider node_wait_time
         'runs': 1,
         'protocol': 'dolphin',
         'longest_causal_chain': 10,
-        'node_wait_time': 30 # how long a node will sleep before processing a transaction
+        'node_wait_time':0 # how long a node will sleep before processing a causal transaction
     }
     node_params = {
         'timeout': 5_000,  # ms
@@ -130,7 +131,8 @@ def remote(ctx, debug=False):
         'causal_transactions_collision_rate':0.0, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
         'cert_timeout': 300, # ms
-        'cross_shard_count':1
+        'cross_shard_count':1,
+        'multi_home_appearance_rate': 0.1
     }
     try:
         Bench(ctx).run(bench_params, node_params, debug)

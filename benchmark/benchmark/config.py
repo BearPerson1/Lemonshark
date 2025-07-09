@@ -281,6 +281,12 @@ class NodeParameters:
                 if not isinstance(json['causal_transactions_respect_early_finality'], bool):
                     raise ConfigError('causal_transactions_respect_early_finality must be a boolean')
 
+            if 'multi_home_appearance_rate' in json:
+                rate = float(json['multi_home_appearance_rate'])
+                if not 0.0 <= rate <= 1.0:
+                    raise ConfigError('multi_home_appearance_rate must be between 0.0 and 1.0')
+                float_inputs.append(rate)
+
             if not all(isinstance(x, int) for x in inputs):
                 raise ConfigError('Invalid integer parameters type')
 
