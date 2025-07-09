@@ -480,6 +480,13 @@ impl Dolphin {
                             }
                         }
                     }
+
+                    // Cleanup old delayed certificates to prevent memory leaks
+                    // Remove certificates that are older than the current virtual round by gc_depth
+                    if self.virtual_round > self.gc_depth {
+                        let gc_round = self.virtual_round - self.gc_depth;
+                        self.delayed_certificates.retain(|&delay_round, _| delay_round > gc_round);
+                    }
                     // Print debug state
 
                     // self.with_state(&state, |state| {
