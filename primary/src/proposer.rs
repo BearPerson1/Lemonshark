@@ -59,6 +59,8 @@ pub struct Proposer {
     causal_transactions_collision_rate: f64,
     tx_client: Sender<ClientMessage>,
     cross_shard_count: u64,
+    multi_home_appearance_rate: f64,
+    faults: u64,
 }
 
 
@@ -80,6 +82,8 @@ impl Proposer {
         causal_transactions_collision_rate: f64,
         tx_client: Sender<ClientMessage>,
         cross_shard_count: u64,
+        multi_home_appearance_rate: f64, 
+        faults: u64,
         
     ) {
         let genesis = Certificate::genesis(committee)
@@ -110,6 +114,8 @@ impl Proposer {
                 causal_transactions_collision_rate,
                 tx_client,
                 cross_shard_count,
+                multi_home_appearance_rate,
+                faults,
             }
             .run()
             .await;
@@ -164,6 +170,14 @@ impl Proposer {
         }
         
         cross_shard_map
+    }
+
+    fn determine_multi_home_failure(&self) -> u64 {
+        if rand::thread_rng().gen_bool(self.multi_home_appearance_rate) {
+            1  // Multi-homed transaction
+        } else {
+            0  // Normal transaction
+        }
     }
 
     // flip coin to see if collision happens. 
@@ -225,8 +239,14 @@ impl Proposer {
             shard_num, 
             current_size
         ); 
+
+        let mut multi_home_wait_time = 0; // Default value, will be updated if needed
         if !cross_shard_map.is_empty() {
             debug!("Cross-shard mappings: {:?}", cross_shard_map);
+
+            // Determine if this is a multi-home transaction
+            multi_home_wait_time = self.determine_multi_home_failure();
+            debug!("Multi-home wait time: {}", multi_home_wait_time);
         }
 
         // todo: delete
@@ -252,6 +272,7 @@ impl Proposer {
             causal_transaction_id,
             collision_fail,
             None,
+            multi_home_wait_time, 
         )
         .await;
         debug!("Created header {:?}", header);

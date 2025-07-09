@@ -225,6 +225,8 @@ impl Primary {
             parameters.causal_transactions_collision_rate,
             proposer_tx_client,
             parameters.cross_shard_count,
+            parameters.multi_home_appearance_rate,
+            parameters.faults,
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.

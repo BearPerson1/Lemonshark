@@ -90,6 +90,7 @@ pub struct Parameters {
     pub cert_timeout: u64,
     pub cross_shard_count:u64,
     pub multi_home_appearance_rate: f64,
+    pub faults: u64,
 }
 
 impl Default for Parameters {
@@ -110,6 +111,7 @@ impl Default for Parameters {
             cert_timeout: 5000,
             cross_shard_count:1,
             multi_home_appearance_rate: 0.0,
+            faults: 0, 
         }
     }
 }
@@ -134,6 +136,7 @@ impl Parameters {
         info!("Certificate timeout set to {} ms", self.cert_timeout);
         info!("Cross-Shard set to {} shards", self.cross_shard_count);
         info!("Multi-home appearance rate set to {:.2}%", self.multi_home_appearance_rate * 100.0);
+        info!("Number of faults set to {}", self.faults);  // Add this line
     }
 }
 

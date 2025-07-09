@@ -60,7 +60,7 @@ pub struct Header {
     pub causal_transaction_id: u64,
     pub collision_fail: bool,
     pub SBO: Option<bool>,
-    
+    pub multi_home_wait_time: u64, 
 
 }
 
@@ -80,6 +80,7 @@ impl Header {
         causal_transaction_id: u64,
         collision_fail: bool,
         SBO: Option<bool>,
+        multi_home_wait_time: u64,
     ) -> Self {
         let header = Self {
             author,
@@ -96,6 +97,7 @@ impl Header {
             causal_transaction_id,
             collision_fail,
             SBO,
+            multi_home_wait_time,
         };
         let id = header.digest();
         let signature = signature_service.request_signature(id.clone()).await;

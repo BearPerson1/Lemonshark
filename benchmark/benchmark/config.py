@@ -287,6 +287,12 @@ class NodeParameters:
                     raise ConfigError('multi_home_appearance_rate must be between 0.0 and 1.0')
                 float_inputs.append(rate)
 
+            if 'faults' in json:
+                faults = int(json['faults'])
+                if faults < 0:
+                    raise ConfigError('faults must be non-negative')
+                inputs.append(faults)
+
             if not all(isinstance(x, int) for x in inputs):
                 raise ConfigError('Invalid integer parameters type')
 
