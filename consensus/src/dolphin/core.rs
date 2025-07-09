@@ -56,7 +56,7 @@ pub struct Dolphin {
     name: PublicKey,
     cert_timeout: u64,
     cert_timer:Option<Instant>,
-
+    multi_home_delayed_certs: HashMap<u64, (Certificate, u64, PublicKey)>, 
 }
 
 impl Dolphin {
@@ -106,6 +106,7 @@ impl Dolphin {
                 name,
                 cert_timeout,
                 cert_timer: None,
+                multi_home_delayed_certs: HashMap::new(),
             }
             .run()
             .await;
@@ -352,6 +353,29 @@ impl Dolphin {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
+                         // Check for multi-home wait before processing
+                        if certificate.header.multi_home_wait_time != 0 {
+                            let target_round = certificate.header.round + certificate.header.multi_home_wait_time;
+                            let unique_id = certificate.header.round; // or use a counter for unique IDs
+                            self.multi_home_delayed_certs.insert(unique_id, (certificate.clone(), target_round, certificate.header.author.clone()));
+                            debug!("Certificate {} delayed for multi-home wait: round {} + {} = {}, waiting for author {:?}", 
+                                certificate.header, certificate.header.round, certificate.header.multi_home_wait_time, target_round, certificate.header.author);
+                        }
+
+                            // Process delayed certificates - check if current certificate's author matches any delayed certs
+                        let mut certificates_to_remove = Vec::new();
+                        for (&unique_id, (delayed_cert, target_round, delayed_author)) in &self.multi_home_delayed_certs {
+                            if certificate.header.author == *delayed_author && certificate.header.round >= *target_round {
+                                info!("Delay-Committed {} by {}", delayed_cert.header,certificate.header);
+                                certificates_to_remove.push(unique_id);
+                            }
+                        }
+
+                        // Remove processed delayed certificates
+                        for unique_id in certificates_to_remove {
+                            self.multi_home_delayed_certs.remove(&unique_id);
+                        }
+
                         // Update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round {
                             self.shard_last_committed_round.insert(certificate.header.shard_num, certificate.header.round);
@@ -406,8 +430,13 @@ impl Dolphin {
                             warn!("Failed to output certificate: {}", e);
                         }
                     }
-                    // Print debug state
 
+
+
+
+
+
+                    // Print debug state
                     // self.with_state(&state, |state| {
                     //     state.print_state(self.committee.get_all_primary_ids());
                     // }).await;
