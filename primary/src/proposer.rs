@@ -174,9 +174,27 @@ impl Proposer {
 
     fn determine_multi_home_failure(&self) -> u64 {
         if rand::thread_rng().gen_bool(self.multi_home_appearance_rate) {
-            1  // Multi-homed transaction
+            // Multi-homed transaction - simulate attempts to reach healthy nodes
+            let total_nodes = self.committee.size() as u64;
+            let success_probability = (total_nodes - self.faults) as f64 / total_nodes as f64;
+            
+            let mut failure_count = 0;
+            let max_attempts = self.faults; // Maximum number of attempts/flips
+            
+            for _ in 0..max_attempts {
+                if rand::thread_rng().gen_bool(success_probability) {
+                    // Success - we reached a healthy node
+                    return failure_count;
+                } else {
+                    // Failed attempt - increment counter and try again
+                    failure_count += 1;
+                }
+            }
+            
+            // If we've exhausted all attempts, return the failure count
+            failure_count
         } else {
-            0  // Normal transaction
+            0  // Normal transaction - no failures
         }
     }
 
