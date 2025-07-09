@@ -454,7 +454,7 @@ impl Committer {
 
 // ==================================================================================
 
-    /// Try to commit. If we succeed, output am ordered sequence.
+    /// Try to commit. If we succeed, output an ordered sequence.
     pub fn try_commit(
         &mut self,
         certificate: &Certificate,

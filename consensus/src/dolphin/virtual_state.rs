@@ -182,7 +182,7 @@ impl VirtualState {
             if leader != prev_leader {
                 break;
             }
-            
+            debug!("Leader same as previous wave, retrying...");
             // If we've tried too many times, just use this leader to prevent infinite loop
             if attempts > self.committee.size() {
                 break;

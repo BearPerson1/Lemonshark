@@ -466,6 +466,7 @@ impl Dolphin {
                                certificate.header.casual_transaction &&
                                certificate.header.author == name {
                                 let mut header = certificate.header.clone();
+                                // if early committment is possible, collision should be impossible. 
                                 header.collision_fail = false;
                                 let msg = ClientMessage {
                                     header,
