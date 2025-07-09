@@ -57,6 +57,9 @@ pub struct Dolphin {
     cert_timeout: u64,
     cert_timer:Option<Instant>,
 
+    /// Stores certificates with multi-home wait delays, keyed by delay round (certificate round + multi-home wait)
+    delayed_certificates: HashMap<Round, Vec<Certificate>>,
+
 }
 
 impl Dolphin {
@@ -106,6 +109,7 @@ impl Dolphin {
                 name,
                 cert_timeout,
                 cert_timer: None,
+                delayed_certificates: HashMap::new(),
             }
             .run()
             .await;
@@ -349,6 +353,18 @@ impl Dolphin {
 
                     // Output the sequence in the right order.
                     for certificate in sequence {
+                        // Check if this certificate has a multi-home wait delay
+                        if certificate.header.multi_home_wait_time > 0 {
+                            let delay_round = certificate.header.round + certificate.header.multi_home_wait_time;
+                            self.delayed_certificates
+                                .entry(delay_round)
+                                .or_insert_with(Vec::new)
+                                .push(certificate.clone());
+                            debug!("Stored certificate with multi-home wait delay - Round: {}, Delay: {}, Process at: {}", 
+                                certificate.header.round, certificate.header.multi_home_wait_time, delay_round);
+                            continue; // Skip normal processing for delayed certificates
+                        }
+
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
 
@@ -404,6 +420,64 @@ impl Dolphin {
 
                         if let Err(e) = self.tx_output.send(certificate).await {
                             warn!("Failed to output certificate: {}", e);
+                        }
+                    }
+
+                    // Process delayed certificates that are ready for the current virtual round
+                    if let Some(ready_certificates) = self.delayed_certificates.remove(&self.virtual_round) {
+                        for certificate in ready_certificates {
+                            info!("multihome delay {}...", certificate.header);
+                            
+                            // Process the delayed certificate normally
+                            #[cfg(not(feature = "benchmark"))]
+                            info!("Committed (delayed) {}", certificate.header);
+
+                            // Update shard_last_committed_round
+                            if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round {
+                                self.shard_last_committed_round.insert(certificate.header.shard_num, certificate.header.round);
+                            }
+
+                            // GC for state.early_committed_certs
+                            self.with_state(&state, |state| {
+                                state.remove_early_committed_certs(&certificate);
+                            }).await;
+
+                            #[cfg(feature = "benchmark")]
+                            for digest in certificate.header.payload.keys() {
+                                info!("Committed (delayed) {} -> {:?}", certificate.header, digest);
+                            }
+
+                            // Check if we need to send a client message
+                            if certificate.header.casual_transaction && certificate.header.author == self.name {
+                                // Create clones only if we need to spawn
+                                let certificate_clone = certificate.clone();
+                                let tx_client_clone = self.tx_client.clone();
+                                
+                                tokio::spawn(async move {
+                                    let msg = ClientMessage {
+                                        header: certificate_clone.header.clone(),
+                                        message_type: 1,  // 1 for Certificate
+                                    };
+                                    
+                                    if let Err(e) = tx_client_clone.send(msg).await {
+                                        warn!("Failed to send delayed certificate to client: {}", e);
+                                    } else {
+                                        debug!("Successfully sent committed delayed certificate to client - Round: {}, Shard: {}",
+                                            certificate_clone.header.round,
+                                            certificate_clone.header.shard_num
+                                        );
+                                    }
+                                });
+                            }
+
+                            self.tx_commit
+                                .send(certificate.clone())
+                                .await
+                                .expect("Failed to send committed delayed certificate to primary");
+
+                            if let Err(e) = self.tx_output.send(certificate).await {
+                                warn!("Failed to output delayed certificate: {}", e);
+                            }
                         }
                     }
                     // Print debug state
