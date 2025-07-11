@@ -350,8 +350,8 @@ impl Dolphin {
 
                     // Output the sequence in the right order.
                     for certificate in sequence {
-                        #[cfg(not(feature = "benchmark"))]
-                        info!("Committed {}", certificate.header);
+                        // #[cfg(not(feature = "benchmark"))]
+                        debug!("Committed {}", certificate.header);
                         
 
 
