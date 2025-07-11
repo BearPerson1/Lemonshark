@@ -69,7 +69,7 @@ def analyze_delay_commit_times(log_content):
         
         if trigger_time is not None:
             # Calculate delay: Time B - Time A (trigger time - original commit time)
-            delay_ms = (trigger_time - original_commit_time) * 1000
+            delay_ms = max(0, (trigger_time - original_commit_time) * 1000)
             delays.append(delay_ms)
             pairs_found += 1
             
@@ -81,7 +81,7 @@ def analyze_delay_commit_times(log_content):
             print()
         else:
             # Fallback: use delay-commit time - original commit time (C-A)
-            fallback_delay_ms = (delay_committed_time - original_commit_time) * 1000
+            fallback_delay_ms = max(0, (delay_committed_time - original_commit_time) * 1000)
             delays.append(fallback_delay_ms)
             pairs_found += 1
             

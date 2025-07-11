@@ -12,7 +12,7 @@ from benchmark.remote import Bench, BenchError
 @task
 def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
-    FAULTS = 3
+    FAULTS = 1
     bench_params = {
         'faults': FAULTS,
         'nodes': 10,
@@ -38,7 +38,7 @@ def local(ctx, debug=True):
         'causal_transactions_collision_rate':.5, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
         'cert_timeout': 100, # ms
-        'cross_shard_count':4,
+        'cross_shard_count':2,
         'multi_home_appearance_rate': 1.0,
         'faults': FAULTS
         

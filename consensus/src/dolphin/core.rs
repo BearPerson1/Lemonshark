@@ -352,6 +352,13 @@ impl Dolphin {
                     for certificate in sequence {
                         #[cfg(not(feature = "benchmark"))]
                         info!("Committed {}", certificate.header);
+                        
+
+
+                        #[cfg(feature = "benchmark")]
+                        for digest in certificate.header.payload.keys() {
+                            info!("Committed {} -> {:?}", certificate.header, digest);
+                        }
 
                          // Check for multi-home wait before processing
                         if certificate.header.multi_home_wait_time != 0 {
@@ -392,11 +399,6 @@ impl Dolphin {
                         //     certificate.header.round,
                         //     certificate.header.shard_num
                         // );
-
-                        #[cfg(feature = "benchmark")]
-                        for digest in certificate.header.payload.keys() {
-                            info!("Committed {} -> {:?}", certificate.header, digest);
-                        }
 
                             // Check if we need to send a client message
                         if certificate.header.casual_transaction && certificate.header.author == self.name {
