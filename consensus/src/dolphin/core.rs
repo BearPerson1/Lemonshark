@@ -56,7 +56,7 @@ pub struct Dolphin {
     name: PublicKey,
     cert_timeout: u64,
     cert_timer:Option<Instant>,
-    multi_home_delayed_certs: HashMap<u64, (Certificate, u64, PublicKey)>, 
+    multi_home_delayed_certs: Arc<Mutex<HashMap<u64, (Certificate, u64, PublicKey)>>>,
 }
 
 impl Dolphin {
@@ -106,7 +106,7 @@ impl Dolphin {
                 name,
                 cert_timeout,
                 cert_timer: None,
-                multi_home_delayed_certs: HashMap::new(),
+                multi_home_delayed_certs: Arc::new(Mutex::new(HashMap::new())),
             }
             .run()
             .await;
@@ -360,28 +360,65 @@ impl Dolphin {
                             info!("Committed {} -> {:?}", certificate.header, digest);
                         }
 
-                         // Check for multi-home wait before processing
+                        //  // Check for multi-home wait before processing
+                        // if certificate.header.multi_home_wait_time != 0 {
+                        //     let target_round = certificate.header.round + certificate.header.multi_home_wait_time;
+                        //     let unique_id = certificate.header.round; // or use a counter for unique IDs
+                        //     self.multi_home_delayed_certs.insert(unique_id, (certificate.clone(), target_round, certificate.header.author.clone()));
+                        //     debug!("Certificate {} delayed for multi-home wait: round {} + {} = {}, waiting for author {:?}", 
+                        //         certificate.header, certificate.header.round, certificate.header.multi_home_wait_time, target_round, certificate.header.author);
+                        // } 
                         if certificate.header.multi_home_wait_time != 0 {
                             let target_round = certificate.header.round + certificate.header.multi_home_wait_time;
                             let unique_id = certificate.header.round; // or use a counter for unique IDs
-                            self.multi_home_delayed_certs.insert(unique_id, (certificate.clone(), target_round, certificate.header.author.clone()));
+                            let mut delayed_certs = self.multi_home_delayed_certs.lock().await;
+                            delayed_certs.insert(unique_id, (certificate.clone(), target_round, certificate.header.author.clone()));
                             debug!("Certificate {} delayed for multi-home wait: round {} + {} = {}, waiting for author {:?}", 
                                 certificate.header, certificate.header.round, certificate.header.multi_home_wait_time, target_round, certificate.header.author);
                         }
 
-                            // Process delayed certificates - check if current certificate's author matches any delayed certs
+                        //     // Process delayed certificates - check if current certificate's author matches any delayed certs
+                        // let mut certificates_to_remove = Vec::new();
+                        // for (&unique_id, (delayed_cert, target_round, delayed_author)) in &self.multi_home_delayed_certs {
+                        //     if certificate.header.author == *delayed_author && certificate.header.round >= *target_round {
+                        //         info!("Delay-Committed {} by {}", delayed_cert.header,certificate.header);
+                        //         certificates_to_remove.push(unique_id);
+                        //     }
+                        // }
+
+                        // // Remove processed delayed certificates
+                        // for unique_id in certificates_to_remove {
+                        //     self.multi_home_delayed_certs.remove(&unique_id);
+                        // }
+
+
+                    let multi_home_delayed_certs_clone = Arc::clone(&self.multi_home_delayed_certs);
+                    let certificate_author = certificate.header.author.clone();
+                    let certificate_round = certificate.header.round;
+                    let certificate_header = certificate.header.clone();
+
+                    tokio::spawn(async move {
                         let mut certificates_to_remove = Vec::new();
-                        for (&unique_id, (delayed_cert, target_round, delayed_author)) in &self.multi_home_delayed_certs {
-                            if certificate.header.author == *delayed_author && certificate.header.round >= *target_round {
-                                info!("Delay-Committed {} by {}", delayed_cert.header,certificate.header);
-                                certificates_to_remove.push(unique_id);
+                        
+                        // Read phase
+                        {
+                            let delayed_certs = multi_home_delayed_certs_clone.lock().await;
+                            for (&unique_id, (delayed_cert, target_round, delayed_author)) in delayed_certs.iter() {
+                                if certificate_author == *delayed_author && certificate_round >= *target_round {
+                                    info!("Delay-Committed {} by {}", delayed_cert.header, certificate_header);
+                                    certificates_to_remove.push(unique_id);
+                                }
                             }
                         }
-
-                        // Remove processed delayed certificates
-                        for unique_id in certificates_to_remove {
-                            self.multi_home_delayed_certs.remove(&unique_id);
+                        
+                        // Write phase
+                        if !certificates_to_remove.is_empty() {
+                            let mut delayed_certs = multi_home_delayed_certs_clone.lock().await;
+                            for unique_id in certificates_to_remove {
+                                delayed_certs.remove(&unique_id);
+                            }
                         }
+                    });
 
                         // Update shard_last_committed_round
                         if *self.shard_last_committed_round.get(&certificate.header.shard_num).unwrap_or(&0) < certificate.header.round {
