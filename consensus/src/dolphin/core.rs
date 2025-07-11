@@ -370,13 +370,36 @@ impl Dolphin {
                         }
 
                             // Process delayed certificates - check if current certificate's author matches any delayed certs
-                        let mut certificates_to_remove = Vec::new();
-                        for (&unique_id, (delayed_cert, target_round, delayed_author)) in &self.multi_home_delayed_certs {
-                            if certificate.header.author == *delayed_author && certificate.header.round >= *target_round {
-                                info!("Delay-Committed {} by {}", delayed_cert.header,certificate.header);
-                                certificates_to_remove.push(unique_id);
+                        let certificates_to_remove = if !self.multi_home_delayed_certs.is_empty() {
+                            // Clone data needed for parallel processing
+                            let delayed_certs_clone = self.multi_home_delayed_certs.clone();
+                            let cert_author = certificate.header.author.clone();
+                            let cert_round = certificate.header.round;
+                            let cert_header_clone = certificate.header.clone();
+                            
+                            // Process delayed certificates in parallel
+                            let task = tokio::spawn(async move {
+                                let mut certificates_to_remove = Vec::new();
+                                for (&unique_id, (delayed_cert, target_round, delayed_author)) in &delayed_certs_clone {
+                                    if cert_author == *delayed_author && cert_round >= *target_round {
+                                        info!("Delay-Committed {} by {}", delayed_cert.header, cert_header_clone);
+                                        certificates_to_remove.push(unique_id);
+                                    }
+                                }
+                                certificates_to_remove
+                            });
+                            
+                            // Await the result
+                            match task.await {
+                                Ok(result) => result,
+                                Err(e) => {
+                                    warn!("Failed to process delayed certificates in parallel: {}", e);
+                                    Vec::new()
+                                }
                             }
-                        }
+                        } else {
+                            Vec::new()
+                        };
 
                         // Remove processed delayed certificates
                         for unique_id in certificates_to_remove {
