@@ -16,6 +16,7 @@ use std::convert::TryInto as _;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
+use std::convert::TryInto;
 
 #[cfg(test)]
 #[path = "tests/batch_maker_tests.rs"]
