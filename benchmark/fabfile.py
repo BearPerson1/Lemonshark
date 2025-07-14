@@ -19,7 +19,7 @@ def local(ctx, debug=True):
         'workers': 1,
         'rate': 10000,
         'tx_size': 512,
-        'duration': 50, # note to consider node_wait_time
+        'duration': 150, # note to consider node_wait_time
         'protocol': 'dolphin',
         'longest_causal_chain':100, # longest chain of causally dependant trans a client will send
         'node_wait_time': 0 # how long a node will sleep before processing a causal transaction
@@ -38,8 +38,8 @@ def local(ctx, debug=True):
         'causal_transactions_collision_rate':.5, # how often we have collisions when doing causally dependant transactions
         'causal_transactions_respect_early_finality': True, # if true, early commits will be communicated to clients. 
         'cert_timeout': 100, # ms
-        'cross_shard_count':2,
-        'multi_home_appearance_rate': 1.0,
+        'cross_shard_count':9,
+        'multi_home_appearance_rate': 0.5,
         'faults': FAULTS
         
     }
@@ -114,11 +114,11 @@ def remote(ctx, debug=False):
         'collocate': True,
         'rate': [20_000],
         'tx_size': 512,
-        'duration': 50,  # note to consider node_wait_time
+        'duration': 160,  # note to consider node_wait_time
         'runs': 1,
         'protocol': 'dolphin',
-        'longest_causal_chain': 10,
-        'node_wait_time':0 # how long a node will sleep before processing a causal transaction
+        'longest_causal_chain': 0,
+        'node_wait_time':40 # how long a node will sleep before processing a causal transaction
     }
     node_params = {
         'timeout': 5_000,  # ms
